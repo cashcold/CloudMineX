@@ -1,7 +1,16 @@
 import axios from 'axios';
 
+// Directly set Heroku API base URL (uses env variable if present, defaults directly to Heroku)
+const getBaseURL = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    return `${envUrl.replace(/\/$/, '')}/api`;
+  }
+  return 'https://cloudminex-fece5f44d653.herokuapp.com/api';
+};
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: getBaseURL(),
   headers: {
     'Content-Type': 'application/json',
   },
