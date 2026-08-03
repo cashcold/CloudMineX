@@ -1,0 +1,6 @@
+{
+  "name": "CloudMineX",
+  "description": "Digital Mining Dashboard & Cloud Mining Platform with Mobile Money, Cryptocurrency recharge, simulated mining contracts, income analytics, referral management, and admin dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

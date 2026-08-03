@@ -1,0 +1,285 @@
+{
+  "users": [
+    {
+      "id": "usr_demo_101",
+      "username": "demoUser",
+      "balance": 1000,
+      "currency": "GHS",
+      "referralCode": "CMX-7892",
+      "totalRewards": 125.5,
+      "activeContracts": 1,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    }
+  ],
+  "miningPlans": [
+    {
+      "id": "plan_starter",
+      "name": "STARTER MINER",
+      "description": "Entry level cloud rig for new digital miners.",
+      "price": 100,
+      "duration": 7,
+      "rewardRate": 0.05,
+      "estimatedDailyReward": 5,
+      "estimatedTotalReward": 35,
+      "image": "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=400&q=80",
+      "active": true,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    },
+    {
+      "id": "plan_basic",
+      "name": "BASIC MINER",
+      "description": "Reliable dual-chip miner with enhanced daily yield.",
+      "price": 300,
+      "duration": 14,
+      "rewardRate": 0.06,
+      "estimatedDailyReward": 18,
+      "estimatedTotalReward": 252,
+      "image": "https://images.unsplash.com/photo-1622979135225-d2ba269bc1bd?auto=format&fit=crop&w=400&q=80",
+      "active": true,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    },
+    {
+      "id": "plan_pro",
+      "name": "PRO MINER",
+      "description": "High-performance cloud mining rig with steady 30-day payout.",
+      "price": 700,
+      "duration": 30,
+      "rewardRate": 0.07,
+      "estimatedDailyReward": 49,
+      "estimatedTotalReward": 1470,
+      "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=400&q=80",
+      "active": true,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    },
+    {
+      "id": "plan_advanced",
+      "name": "ADVANCED MINER",
+      "description": "Industrial grade GPU array miner for maximum yield potential.",
+      "price": 1500,
+      "duration": 60,
+      "rewardRate": 0.08,
+      "estimatedDailyReward": 120,
+      "estimatedTotalReward": 7200,
+      "image": "https://images.unsplash.com/photo-1605792657660-596af9009e82?auto=format&fit=crop&w=400&q=80",
+      "active": true,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    },
+    {
+      "id": "plan_premium",
+      "name": "PREMIUM MINER",
+      "description": "Flagship enterprise ASIC cluster for long-term rewards.",
+      "price": 3000,
+      "duration": 90,
+      "rewardRate": 0.09,
+      "estimatedDailyReward": 270,
+      "estimatedTotalReward": 24300,
+      "image": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80",
+      "active": true,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    },
+    {
+      "id": "plan_vip",
+      "name": "VIP MINER",
+      "description": "VIP multi-hash node dedicated to high-frequency block rewards.",
+      "price": 5000,
+      "duration": 90,
+      "rewardRate": 0.1,
+      "estimatedDailyReward": 500,
+      "estimatedTotalReward": 45000,
+      "image": "https://images.unsplash.com/photo-1642543492481-44e81e3914a7?auto=format&fit=crop&w=400&q=80",
+      "active": true,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    },
+    {
+      "id": "plan_enterprise",
+      "name": "ENTERPRISE MINER",
+      "description": "Enterprise datacenter rack with priority network bandwidth and 11% daily ROI.",
+      "price": 10000,
+      "duration": 120,
+      "rewardRate": 0.11,
+      "estimatedDailyReward": 1100,
+      "estimatedTotalReward": 132000,
+      "image": "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=400&q=80",
+      "active": true,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    },
+    {
+      "id": "plan_titan",
+      "name": "TITAN RIG MINER",
+      "description": "Ultra-high density 20,000 GHC industrial mining rig with 12% daily compound yield.",
+      "price": 20000,
+      "duration": 180,
+      "rewardRate": 0.12,
+      "estimatedDailyReward": 2400,
+      "estimatedTotalReward": 432000,
+      "image": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=400&q=80",
+      "active": true,
+      "createdAt": "2026-08-03T15:56:11.686Z",
+      "updatedAt": "2026-08-03T15:56:11.686Z"
+    }
+  ],
+  "miningContracts": [
+    {
+      "id": "cntr_demo_001",
+      "userId": "usr_demo_101",
+      "planId": "plan_starter",
+      "planName": "STARTER MINER",
+      "amount": 100,
+      "duration": 7,
+      "rewardRate": 0.05,
+      "estimatedDailyReward": 5,
+      "estimatedTotalReward": 35,
+      "accumulatedReward": 10,
+      "startDate": "2026-08-01T15:56:11.688Z",
+      "endDate": "2026-08-08T15:56:11.689Z",
+      "lastCalculatedAt": "2026-08-01T15:56:11.688Z",
+      "status": "active",
+      "createdAt": "2026-08-01T15:56:11.688Z",
+      "updatedAt": "2026-08-01T15:56:11.688Z"
+    }
+  ],
+  "deposits": [],
+  "withdrawals": [],
+  "transactions": [
+    {
+      "id": "tx_seed_001",
+      "userId": "usr_demo_101",
+      "type": "deposit",
+      "amount": 1000,
+      "currency": "GHS",
+      "reference": "DEP-MOMO-9182",
+      "description": "Mobile Money Welcome Demo Credit",
+      "status": "completed",
+      "createdAt": "2026-07-29T15:56:11.689Z"
+    },
+    {
+      "id": "tx_seed_002",
+      "userId": "usr_demo_101",
+      "type": "mining_purchase",
+      "amount": 100,
+      "currency": "GHS",
+      "reference": "PURCHASE-STARTER-01",
+      "description": "Starter Miner Contract Activation",
+      "status": "completed",
+      "createdAt": "2026-08-01T15:56:11.688Z"
+    },
+    {
+      "id": "tx_seed_003",
+      "userId": "usr_demo_101",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "REWARD-DAY-1",
+      "description": "Simulated Mining Reward - Starter Miner",
+      "status": "completed",
+      "createdAt": "2026-08-02T15:56:11.689Z"
+    }
+  ],
+  "referrals": [
+    {
+      "id": "ref_001",
+      "referrerId": "usr_demo_101",
+      "referredUserId": "usr_ref_201",
+      "referredUsername": "Kwame_Miner",
+      "referralCode": "CMX-7892",
+      "reward": 15,
+      "status": "completed",
+      "createdAt": "2026-07-31T15:56:11.689Z"
+    },
+    {
+      "id": "ref_002",
+      "referrerId": "usr_demo_101",
+      "referredUserId": "usr_ref_202",
+      "referredUsername": "Akosua_Crypto",
+      "referralCode": "CMX-7892",
+      "reward": 35,
+      "status": "completed",
+      "createdAt": "2026-08-02T15:56:11.689Z"
+    }
+  ],
+  "chatMessages": [
+    {
+      "id": "chat_001",
+      "username": "Kwame",
+      "text": "Just received GHS 350.00 directly to my MTN MoMo! CloudMineX pays fast 🔥",
+      "badge": "Verified Payout",
+      "type": "payout",
+      "createdAt": "2026-08-03T15:26:11.689Z"
+    },
+    {
+      "id": "chat_002",
+      "username": "Abena",
+      "text": "Deposited GHS 300 via Telecel Cash and activated Basic Miner rig! Daily yield GHS 18.00 received today 🚀",
+      "badge": "Active Miner",
+      "type": "deposit",
+      "createdAt": "2026-08-03T15:34:11.689Z"
+    },
+    {
+      "id": "chat_003",
+      "username": "Kofi",
+      "text": "Welcome bonus GHS 50 activated after my first deposit! Best cloud mining platform in Ghana",
+      "badge": "VIP Member",
+      "type": "chat",
+      "createdAt": "2026-08-03T15:41:11.689Z"
+    },
+    {
+      "id": "chat_004",
+      "username": "Rita",
+      "text": "Withdrawal of GHS 700.00 confirmed in 3 minutes! Thanks CloudMineX admin!",
+      "badge": "Verified Payout",
+      "type": "payout",
+      "createdAt": "2026-08-03T15:48:11.689Z"
+    },
+    {
+      "id": "chat_005",
+      "username": "Yaw",
+      "text": "Started Pro Miner plan GHS 700! Estimated daily GHS 49.00 incoming everyday",
+      "badge": "Pro Miner",
+      "type": "deposit",
+      "createdAt": "2026-08-03T15:54:11.689Z"
+    },
+    {
+      "id": "chat_006",
+      "username": "Belinda",
+      "text": "GHS 450 payout received on my MoMo account! Thanks CloudMineX team 🙏",
+      "badge": "Verified Payout",
+      "type": "payout",
+      "createdAt": "2026-08-03T15:55:11.689Z"
+    },
+    {
+      "id": "chat_007",
+      "username": "Bob",
+      "text": "My GHS 50 welcome bonus plus daily earnings cashed out right after my first GHS 100 recharge!",
+      "badge": "Active Miner",
+      "type": "payout",
+      "createdAt": "2026-08-03T15:55:41.689Z"
+    }
+  ],
+  "settings": {
+    "demoMode": true,
+    "baseCurrency": "GHS",
+    "btcAddress": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+    "ethAddress": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+    "usdtErc20Address": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+    "usdtTrc20Address": "TX9Z2s213xS9281a8c9831920zmsa",
+    "usdtBep20Address": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+    "confirmationsBtc": 3,
+    "confirmationsEth": 12,
+    "confirmationsUsdt": 12,
+    "mtnMerchantName": "CloudMineX Ghana MoMo",
+    "mtnMerchantNumber": "+233 24 123 4567",
+    "telecelMerchantName": "CloudMineX Telecel Cash",
+    "telecelMerchantNumber": "+233 20 987 6543",
+    "atMerchantName": "CloudMineX AT Money",
+    "atMerchantNumber": "+233 27 555 0192",
+    "referralBonusPercent": 7
+  }
+}
