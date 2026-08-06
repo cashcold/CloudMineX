@@ -5,6 +5,7 @@ import {
   Zap, 
   ShieldCheck, 
   TrendingUp, 
+  TrendingDown, 
   ArrowRight, 
   Lock, 
   User, 
@@ -21,12 +22,165 @@ import {
   Eye,
   EyeOff,
   ArrowDownLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  RefreshCw,
+  Activity
 } from 'lucide-react';
-import { userService } from '../services/api';
+import api, { userService } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
 import LiveActivityStream from '../components/LiveActivityStream';
 import Statistics from '../components/Statistics';
+
+class MarketTicker extends Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      tickers: [
+        { symbol: 'BTC', name: 'Bitcoin', price: 67450.2, change24h: 2.84 },
+        { symbol: 'ETH', name: 'Ethereum', price: 3520.8, change24h: 1.92 },
+        { symbol: 'USDT', name: 'Tether USD', price: 1.0001, change24h: 0.01 },
+        { symbol: 'BNB', name: 'BNB Chain', price: 585.4, change24h: 3.15 },
+        { symbol: 'SOL', name: 'Solana', price: 154.6, change24h: 4.8 },
+        { symbol: 'TRX', name: 'TRON', price: 0.1284, change24h: 1.45 },
+      ],
+      lastUpdated: new Date().toLocaleTimeString(),
+      updating: false,
+      flashedSymbol: null,
+    };
+  }
+
+  componentDidMount() {
+    this.fetchMarketData();
+    this.timer = setInterval(this.fetchMarketData, 5000);
+  }
+
+  componentWillUnmount() {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  fetchMarketData = async () => {
+    try {
+      this.setState({ updating: true });
+      const res = await api.get('/market/ticker');
+      if (res.data && res.data.tickers) {
+        const symbols = ['BTC', 'ETH', 'USDT'];
+        const randomFlashed = symbols[Math.floor(Math.random() * symbols.length)];
+        this.setState({
+          tickers: res.data.tickers,
+          lastUpdated: new Date().toLocaleTimeString(),
+          flashedSymbol: randomFlashed,
+        });
+        setTimeout(() => this.setState({ flashedSymbol: null }), 1000);
+      }
+    } catch (err) {
+      this.setState((prevState) => {
+        const jitterBtc = (Math.random() - 0.48) * 12;
+        const jitterEth = (Math.random() - 0.48) * 1.8;
+        return {
+          tickers: prevState.tickers.map((ticker) => {
+            if (ticker.symbol === 'BTC') return { ...ticker, price: +(ticker.price + jitterBtc).toFixed(2) };
+            if (ticker.symbol === 'ETH') return { ...ticker, price: +(ticker.price + jitterEth).toFixed(2) };
+            return ticker;
+          }),
+          lastUpdated: new Date().toLocaleTimeString(),
+        };
+      });
+    } finally {
+      this.setState({ updating: false });
+    }
+  };
+
+  formatPrice = (symbol, price) => {
+    if (symbol === 'USDT') return `$${Number(price).toFixed(4)}`;
+    return `$${Number(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  getSymbolBadge = (symbol) => {
+    switch (symbol) {
+      case 'BTC':
+        return { bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30', dot: 'bg-amber-400', icon: '₿' };
+      case 'ETH':
+        return { bg: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30', dot: 'bg-cyan-400', icon: 'Ξ' };
+      case 'USDT':
+        return { bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30', dot: 'bg-emerald-400', icon: '₮' };
+      case 'BNB':
+        return { bg: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30', dot: 'bg-fuchsia-400', icon: '⟠' };
+      case 'SOL':
+        return { bg: 'bg-sky-500/10 text-sky-300 border-sky-500/30', dot: 'bg-sky-400', icon: '◎' };
+      default:
+        return { bg: 'bg-rose-500/10 text-rose-300 border-rose-500/30', dot: 'bg-rose-400', icon: 'T' };
+    }
+  };
+
+  renderCryptoCard = (item) => {
+    const style = this.getSymbolBadge(item.symbol);
+    const isPositive = item.change24h >= 0;
+    const isFlashed = this.state.flashedSymbol === item.symbol;
+
+    return (
+      <div
+        key={item.symbol}
+        className={`rounded-2xl border px-3 py-2.5 transition-all duration-300 ${
+          isFlashed
+            ? 'border-[#00D4A8]/60 bg-[#00D4A8]/15 shadow-lg shadow-[#00D4A8]/10 scale-[1.01]'
+            : 'border-[#10253A] bg-[#07111F]/80 hover:bg-[#0D1B2A]'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-xl border text-sm font-black ${style.bg}`}>
+              {style.icon}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-black uppercase tracking-[0.2em] text-white">{item.symbol}</p>
+              <p className="truncate text-[10px] text-[#94A3B8]">{item.name}</p>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <p className="text-sm font-black text-white">{this.formatPrice(item.symbol, item.price)}</p>
+            <div className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+              {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+              <span>{isPositive ? '+' : ''}{item.change24h}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  render() {
+    const { tickers, lastUpdated, updating } = this.state;
+    const featuredTickers = tickers.filter((ticker) => ['BTC', 'ETH', 'USDT'].includes(ticker.symbol));
+    const secondaryTickers = tickers.filter((ticker) => !['BTC', 'ETH', 'USDT'].includes(ticker.symbol));
+    const orderedTickers = [...featuredTickers, ...secondaryTickers];
+
+    return (
+      <div className="mt-8 rounded-[24px] border border-[#00D4A8]/20 bg-[#0D1B2A]/80 p-4 sm:p-5 shadow-2xl shadow-[#00D4A8]/10">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-2xl border border-[#00D4A8]/30 bg-[#00D4A8]/10 p-2 text-[#00D4A8]">
+              <Activity className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#00D4A8]">Live Crypto Market</p>
+              <h3 className="text-lg font-black text-white">Digital Asset Pulse</h3>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-full border border-[#10253A] bg-[#07111F]/80 px-3 py-1.5 text-[11px] font-semibold text-slate-300">
+            <RefreshCw className={`h-3.5 w-3.5 ${updating ? 'animate-spin' : ''}`} />
+            <span>{lastUpdated}</span>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {orderedTickers.map((ticker) => this.renderCryptoCard(ticker))}
+        </div>
+      </div>
+    );
+  }
+}
 
 export class LandingPage extends Component {
   constructor(props) {
@@ -624,6 +778,8 @@ export class LandingPage extends Component {
               </button>
             </div>
           </div>
+
+          <MarketTicker />
         </section>
 
         {/* Live Network Activity Stream */}
