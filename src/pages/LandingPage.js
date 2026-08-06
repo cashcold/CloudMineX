@@ -26,6 +26,7 @@ import {
 import { userService } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
 import LiveActivityStream from '../components/LiveActivityStream';
+import Statistics from '../components/Statistics';
 
 export class LandingPage extends Component {
   constructor(props) {
@@ -286,7 +287,7 @@ export class LandingPage extends Component {
         </header>
 
         {/* Hero Section */}
-        <section id="landing-hero" className="relative pt-12 pb-16 px-4 sm:px-8 max-w-6xl mx-auto overflow-hidden">
+        <section id="landing-hero" className="relative pt-6 pb-8 px-4 sm:px-8 max-w-6xl mx-auto overflow-hidden">
           {/* Ambient Glow Effects */}
           <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-[#00D4A8]/10 rounded-full blur-[120px] pointer-events-none"></div>
           <div className="absolute top-10 right-10 w-64 h-64 bg-[#2DD4FF]/10 rounded-full blur-[100px] pointer-events-none"></div>
@@ -366,14 +367,16 @@ export class LandingPage extends Component {
               </div>
             </div>
 
+            <Statistics />
+
             {/* Key Live Metrics Ticker */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#0D1B2A]/80 border border-[#10253A] backdrop-blur-md text-left">
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#0D1B2A]/80 border border-[#10253A] backdrop-blur-md text-left">
               <div className="p-2.5">
                 <div className="flex items-center gap-1.5 text-[10px] text-[#94A3B8] font-bold uppercase tracking-wider mb-1">
                   <Cloud className="w-3.5 h-3.5 text-[#00D4A8]" />
                   <span>Cloud Hash Rate</span>
                 </div>
-                <p className="text-lg font-black text-white font-mono">248.50 TH/s</p>
+                <p className="text-lg font-black text-white font-mono">748.50 TH/s</p>
               </div>
 
               <div className="p-2.5">
@@ -381,7 +384,7 @@ export class LandingPage extends Component {
                   <Cpu className="w-3.5 h-3.5 text-[#2DD4FF]" />
                   <span>Active Cloud Rigs</span>
                 </div>
-                <p className="text-lg font-black text-white font-mono">18,420 Units</p>
+                <p className="text-lg font-black text-white font-mono">58,420 Units</p>
               </div>
 
               <div className="p-2.5">
