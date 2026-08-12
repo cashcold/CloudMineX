@@ -15,6 +15,41 @@ import { cryptoProvider } from '../services/payment/cryptoProvider';
 
 export const apiRouter = Router();
 
+const isFirstConfirmedDeposit = (userId: string, currentDepositId: string) => {
+  return db.deposits.filter((d) => d.userId === userId && d.status === 'confirmed' && d.id !== currentDepositId).length === 0;
+};
+
+const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) => {
+  if (!user.referredBy) return;
+
+  const referrer = db.users.find((u) => u.id === user.referredBy);
+  if (!referrer) return;
+
+  if (!isFirstConfirmedDeposit(user.id, deposit.id)) return;
+
+  const bonusAmount = Number((deposit.amount * 0.07).toFixed(2));
+  referrer.balance = Number((referrer.balance + bonusAmount).toFixed(2));
+  referrer.totalRewards = Number(((referrer.totalRewards || 0) + bonusAmount).toFixed(2));
+
+  const refRecord = db.referrals.find((r) => r.referredUserId === user.id);
+  if (refRecord) {
+    refRecord.reward = Number((refRecord.reward + bonusAmount).toFixed(2));
+    refRecord.status = 'funded';
+  }
+
+  db.transactions.unshift({
+    id: `tx_referral_reward_${Date.now()}`,
+    userId: referrer.id,
+    type: 'referral_reward',
+    amount: bonusAmount,
+    currency: 'GHS',
+    reference: `REF-BONUS-${user.username.toUpperCase()}`,
+    description: `7% Referral Commission Bonus from ${user.username}`,
+    status: 'completed',
+    createdAt: new Date().toISOString(),
+  });
+};
+
 // ================= USER & AUTH ENDPOINTS =================
 apiRouter.post('/auth/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
@@ -424,42 +459,7 @@ apiRouter.post('/deposits/:id/confirm-demo', (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
     });
 
-    // Check if user was referred by someone and reward referrer if first deposit
-    if (user.referredBy) {
-      const referrer = db.users.find((u) => u.id === user.referredBy);
-      const refRecord = db.referrals.find((r) => r.referredUserId === user.id);
-
-      if (referrer) {
-        // Check if this is the user's first confirmed deposit
-        const previousDeposits = db.deposits.filter(
-          (d) => d.userId === user.id && d.status === 'confirmed' && d.id !== deposit.id
-        );
-
-        if (previousDeposits.length === 0) {
-          const bonusAmount = Number((deposit.amount * 0.07).toFixed(2)); // 7% referral deposit commission
-          referrer.balance = Number((referrer.balance + bonusAmount).toFixed(2));
-          referrer.totalRewards = Number(((referrer.totalRewards || 0) + bonusAmount).toFixed(2));
-
-          if (refRecord) {
-            refRecord.reward = Number((refRecord.reward + bonusAmount).toFixed(2));
-            refRecord.status = 'funded';
-          }
-
-          // Record referrer bonus transaction
-          db.transactions.unshift({
-            id: `tx_ref_bonus_${Date.now()}`,
-            userId: referrer.id,
-            type: 'deposit',
-            amount: bonusAmount,
-            currency: 'GHS',
-            reference: `REF-BONUS-${user.username.toUpperCase()}`,
-            description: `7% Referral Commission Bonus from ${user.username}`,
-            status: 'completed',
-            createdAt: new Date().toISOString(),
-          });
-        }
-      }
-    }
+    creditReferralBonus(user, deposit);
   }
 
   db.saveData();
@@ -759,38 +759,7 @@ apiRouter.post('/admin/deposits/:id/approve', (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
     });
 
-    // Referral commission check
-    if (user.referredBy) {
-      const referrer = db.users.find((u) => u.id === user.referredBy);
-      const refRecord = db.referrals.find((r) => r.referredUserId === user.id);
-      if (referrer) {
-        const previousDeposits = db.deposits.filter(
-          (d) => d.userId === user.id && d.status === 'confirmed' && d.id !== deposit.id
-        );
-        if (previousDeposits.length === 0) {
-          const bonusAmount = Number((deposit.amount * 0.07).toFixed(2));
-          referrer.balance = Number((referrer.balance + bonusAmount).toFixed(2));
-          referrer.totalRewards = Number(((referrer.totalRewards || 0) + bonusAmount).toFixed(2));
-
-          if (refRecord) {
-            refRecord.reward = Number((refRecord.reward + bonusAmount).toFixed(2));
-            refRecord.status = 'funded';
-          }
-
-          db.transactions.unshift({
-            id: `tx_ref_bonus_${Date.now()}`,
-            userId: referrer.id,
-            type: 'deposit',
-            amount: bonusAmount,
-            currency: 'GHS',
-            reference: `REF-BONUS-${user.username.toUpperCase()}`,
-            description: `7% Referral Commission Bonus from ${user.username}`,
-            status: 'completed',
-            createdAt: new Date().toISOString(),
-          });
-        }
-      }
-    }
+    creditReferralBonus(user, deposit);
   }
 
   db.saveData();
@@ -991,7 +960,7 @@ apiRouter.get('/activity-stream', (req: Request, res: Response) => {
     { id: 'sim_7', type: 'payout', isReal: false, username: 'Grace', amount: 1200, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 33 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
     { id: 'sim_8', type: 'payout', isReal: false, username: 'Belinda', amount: 450, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 41 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
     { id: 'sim_9', type: 'payout', isReal: false, username: 'Bob', amount: 180, provider: 'Telecel Cash', currency: 'GHS', timestamp: new Date(Date.now() - 52 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_10', type: 'payout', isReal: false, username: 'Frank', amount: 600, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 58 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
+    { id: 'sim_10', type: 'payout', isReal: false, username: 'Kojo', amount: 600, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 58 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
   ];
 
   // Real items first, then simulated items
