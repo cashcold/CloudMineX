@@ -137,6 +137,10 @@ export interface AppSettingsCloudMineX {
   telecelMerchantNumber: string;
   atMerchantName: string;
   atMerchantNumber: string;
+  vodafoneMerchantName?: string;
+  vodafoneMerchantNumber?: string;
+  vodafoneAccountName?: string;
+  vodafoneWalletType?: string;
   referralBonusPercent: number;
 }
 
@@ -179,6 +183,10 @@ class DBStore {
     telecelMerchantNumber: '+233 20 987 6543',
     atMerchantName: 'CloudMineX AT Money',
     atMerchantNumber: '+233 27 555 0192',
+    vodafoneMerchantName: 'Vodafone Cash',
+    vodafoneMerchantNumber: '0202496815',
+    vodafoneAccountName: 'Charles Asumah',
+    vodafoneWalletType: 'Vodafone Cash',
     referralBonusPercent: 7,
   };
 

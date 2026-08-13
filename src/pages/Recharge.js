@@ -10,7 +10,7 @@ export class Recharge extends Component {
     this.state = {
       user: null,
       activeTab: 'MOMO', // MOMO or CRYPTO
-      momoProvider: 'MTN MoMo',
+      momoProvider: 'Vodafone Cash',
       momoAmount: 100,
       customMomoAmount: '',
       cryptoCurrency: 'USDT', // BTC, ETH, USDT
@@ -250,7 +250,7 @@ export class Recharge extends Component {
                     Select Provider
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    {['MTN MoMo', 'Telecel Cash', 'AT Money'].map((provider) => (
+                    {['Vodafone Cash', 'MTN MoMo', 'Telecel Cash'].map((provider) => (
                       <button
                         key={provider}
                         onClick={() => this.setState({ momoProvider: provider })}
@@ -319,30 +319,52 @@ export class Recharge extends Component {
               /* Payment Instructions Card */
               <div className="bg-[#10253A] p-5 rounded-2xl border border-[#00D4A8]/40 space-y-4">
                 <div className="text-center pb-3 border-b border-slate-800">
-                  <span className="text-xs text-[#00D4A8] font-bold uppercase tracking-wider">Payment Instructions</span>
-                  <h3 className="text-2xl font-black text-white mt-1">GHS {momoPaymentResult.paymentDetails.amount.toFixed(2)}</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Provider: {momoPaymentResult.paymentDetails.provider}</p>
+                  <span className="text-xs text-[#00D4A8] font-bold uppercase tracking-wider">Mobile Money Payment</span>
+                  <h3 className="text-2xl font-black text-white mt-1">{momoPaymentResult.paymentDetails.merchantName || 'Vodafone Cash'}</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Vodafone Cash / Mobile Money</p>
                 </div>
 
                 <div className="space-y-3 text-xs">
                   <div className="bg-[#0D1B2A] p-3 rounded-xl border border-slate-800 flex items-center justify-between">
                     <div>
-                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Merchant Name</p>
-                      <p className="font-bold text-white text-sm">{momoPaymentResult.paymentDetails.merchantName}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Amount to Pay</p>
+                      <p className="font-bold text-white text-sm">GH₵ {momoPaymentResult.paymentDetails.amount.toFixed(2)}</p>
                     </div>
                   </div>
 
                   <div className="bg-[#0D1B2A] p-3 rounded-xl border border-slate-800 flex items-center justify-between">
                     <div>
-                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Merchant Number</p>
-                      <p className="font-bold text-[#00D4A8] text-sm">{momoPaymentResult.paymentDetails.merchantNumber}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Number</p>
+                      <p className="font-bold text-[#00D4A8] text-sm">{momoPaymentResult.paymentDetails.merchantNumber || '0202496815'}</p>
                     </div>
                     <button
-                      onClick={() => this.handleCopy(momoPaymentResult.paymentDetails.merchantNumber, 'momoNumber')}
+                      onClick={() => this.handleCopy(momoPaymentResult.paymentDetails.merchantNumber || '0202496815', 'momoNumber')}
                       className="p-2 rounded-lg bg-slate-800 text-slate-200 hover:text-white"
                     >
                       {copiedField === 'momoNumber' ? <Check className="w-4 h-4 text-[#00D4A8]" /> : <Copy className="w-4 h-4" />}
                     </button>
+                  </div>
+
+                  <div className="bg-[#0D1B2A] p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Name</p>
+                      <p className="font-bold text-white text-sm">{momoPaymentResult.paymentDetails.accountName || 'Charles Asumah'}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0D1B2A] p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Wallet Type</p>
+                      <p className="font-bold text-white text-sm">{momoPaymentResult.paymentDetails.walletType || 'Vodafone Cash'}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0D1B2A] p-3 rounded-xl border border-slate-800">
+                    <p className="text-[10px] text-slate-400 uppercase font-semibold">Transfer Note</p>
+                    <p className="font-medium text-slate-200 text-xs leading-relaxed mt-1">
+                      {momoPaymentResult.paymentDetails.instructions || 'Send your GHS payment via Vodafone Cash / Mobile Money and include the payment reference below for faster verification.'}
+                    </p>
+                    <p className="font-bold text-[#00D4A8] mt-2">+233 24 123 4567</p>
                   </div>
 
                   <div className="bg-[#0D1B2A] p-3 rounded-xl border border-slate-800 flex items-center justify-between">
@@ -368,14 +390,7 @@ export class Recharge extends Component {
                     </span>
                   </div>
 
-                  <button
-                    onClick={() => this.handleSimulateDepositConfirmation(momoPaymentResult.deposit.id)}
-                    disabled={isSubmitting}
-                    className="w-full py-3.5 bg-gradient-to-r from-[#00D4A8] via-[#2DD4FF] to-[#00D4A8] text-[#07111F] font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Zap className="w-4 h-4 fill-[#07111F]" />
-                    <span>INSTANT CONFIRM & CREDIT BALANCE (24/7 AUTOMATED)</span>
-                  </button>
+                  
 
                   <button
                     onClick={() => {

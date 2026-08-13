@@ -148,6 +148,10 @@ const appSettingsSchema = new Schema<AppSettingsCloudMineX>({
   telecelMerchantNumber: { type: String },
   atMerchantName: { type: String },
   atMerchantNumber: { type: String },
+  vodafoneMerchantName: { type: String },
+  vodafoneMerchantNumber: { type: String },
+  vodafoneAccountName: { type: String },
+  vodafoneWalletType: { type: String },
   referralBonusPercent: { type: Number, default: 7 },
 });
 

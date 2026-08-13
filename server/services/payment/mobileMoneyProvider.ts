@@ -6,15 +6,30 @@ export class MobileMoneyProvider implements IPaymentProvider {
     const reference = req.reference || `MOMO-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const providerLower = req.provider.toLowerCase();
 
-    let merchantName = db.settings.mtnMerchantName;
-    let merchantNumber = db.settings.mtnMerchantNumber;
+    let merchantName = 'Vodafone Cash';
+    let merchantNumber = '0202496815';
+    let accountName = 'Charles Asumah';
+    let walletType = 'Vodafone Cash';
+    let instructions = 'Send your GHS payment via Vodafone Cash / Mobile Money and include the payment reference below for faster verification.';
 
     if (providerLower.includes('telecel')) {
       merchantName = db.settings.telecelMerchantName;
       merchantNumber = db.settings.telecelMerchantNumber;
+      accountName = 'CloudMineX Telecel Cash';
+      walletType = 'Telecel Cash';
+      instructions = 'Send your GHS payment via Telecel Cash and include the payment reference below for faster verification.';
     } else if (providerLower.includes('at')) {
       merchantName = db.settings.atMerchantName;
       merchantNumber = db.settings.atMerchantNumber;
+      accountName = 'CloudMineX AT Money';
+      walletType = 'AT Money';
+      instructions = 'Send your GHS payment via AT Money and include the payment reference below for faster verification.';
+    } else if (providerLower.includes('mtn')) {
+      merchantName = db.settings.mtnMerchantName;
+      merchantNumber = db.settings.mtnMerchantNumber;
+      accountName = 'CloudMineX Ghana MoMo';
+      walletType = 'MTN MoMo';
+      instructions = 'Send your GHS payment via MTN MoMo and include the payment reference below for faster verification.';
     }
 
     return {
@@ -24,8 +39,11 @@ export class MobileMoneyProvider implements IPaymentProvider {
       amount: req.amount,
       merchantName,
       merchantNumber,
+      accountName,
+      walletType,
+      instructions,
       status: 'pending',
-      message: 'Mobile Money payment instructions generated. Perform transfer using reference.',
+      message: instructions,
       isDemo: true,
     };
   }

@@ -16,6 +16,9 @@ export interface PaymentResponse {
   depositAddress?: string;
   merchantNumber?: string;
   merchantName?: string;
+  accountName?: string;
+  walletType?: string;
+  instructions?: string;
   status: 'pending' | 'detected' | 'confirming' | 'confirmed' | 'failed';
   message: string;
   isDemo: boolean;
