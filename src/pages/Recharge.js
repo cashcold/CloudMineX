@@ -364,7 +364,7 @@ export class Recharge extends Component {
                     <p className="font-medium text-slate-200 text-xs leading-relaxed mt-1">
                       {momoPaymentResult.paymentDetails.instructions || 'Send your GHS payment via Vodafone Cash / Mobile Money and include the payment reference below for faster verification.'}
                     </p>
-                    <p className="font-bold text-[#00D4A8] mt-2">+233 24 123 4567</p>
+                    <p className="font-bold text-[#00D4A8] mt-2">+233 20 249 6815</p> 
                   </div>
 
                   <div className="bg-[#0D1B2A] p-3 rounded-xl border border-slate-800 flex items-center justify-between">
