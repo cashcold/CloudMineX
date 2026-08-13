@@ -15,10 +15,54 @@ import { cryptoProvider } from '../services/payment/cryptoProvider';
 
 export const apiRouter = Router();
 
+const isFirstConfirmedDeposit = (userId: string, currentDepositId: string) => {
+  return (
+    db.deposits.filter(
+      (d) =>
+        d.userId === userId &&
+        d.status === 'confirmed' &&
+        d.id !== currentDepositId
+    ).length === 0
+  );
+};
+
+const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) => {
+  if (!user.referredBy) return;
+
+  const referrer = db.users.find((u) => u.id === user.referredBy);
+  if (!referrer) return;
+
+  // Only pay referral bonus on the first confirmed deposit
+  if (!isFirstConfirmedDeposit(user.id, deposit.id)) return;
+
+  const bonusAmount = Number((deposit.amount * 0.07).toFixed(2));
+
+  referrer.balance = Number((referrer.balance + bonusAmount).toFixed(2));
+  referrer.totalRewards = Number(((referrer.totalRewards || 0) + bonusAmount).toFixed(2));
+
+  const refRecord = db.referrals.find((r) => r.referredUserId === user.id);
+  if (refRecord) {
+    refRecord.reward = Number((refRecord.reward + bonusAmount).toFixed(2));
+    refRecord.status = 'funded';
+  }
+
+  db.transactions.unshift({
+    id: `tx_ref_bonus_${Date.now()}`,
+    userId: referrer.id,
+    type: 'deposit',
+    amount: bonusAmount,
+    currency: 'GHS',
+    reference: `REF-BONUS-${user.username.toUpperCase()}`,
+    description: `7% Referral Commission Bonus from ${user.username}`,
+    status: 'completed',
+    createdAt: new Date().toISOString(),
+  });
+};
+
 // ================= USER & AUTH ENDPOINTS =================
 apiRouter.post('/auth/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
-  
+
   if (!username) {
     return res.status(400).json({ success: false, message: 'Username or phone number is required.' });
   }
@@ -371,7 +415,12 @@ apiRouter.post('/deposits/crypto', async (req: Request, res: Response) => {
     reference: result.reference,
     status: 'pending',
     confirmations: 0,
-    requiredConfirmations: curr === 'BTC' ? db.settings.confirmationsBtc : curr === 'ETH' ? db.settings.confirmationsEth : db.settings.confirmationsUsdt,
+    requiredConfirmations:
+      curr === 'BTC'
+        ? db.settings.confirmationsBtc
+        : curr === 'ETH'
+          ? db.settings.confirmationsEth
+          : db.settings.confirmationsUsdt,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -424,42 +473,7 @@ apiRouter.post('/deposits/:id/confirm-demo', (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
     });
 
-    // Check if user was referred by someone and reward referrer if first deposit
-    if (user.referredBy) {
-      const referrer = db.users.find((u) => u.id === user.referredBy);
-      const refRecord = db.referrals.find((r) => r.referredUserId === user.id);
-
-      if (referrer) {
-        // Check if this is the user's first confirmed deposit
-        const previousDeposits = db.deposits.filter(
-          (d) => d.userId === user.id && d.status === 'confirmed' && d.id !== deposit.id
-        );
-
-        if (previousDeposits.length === 0) {
-          const bonusAmount = Number((deposit.amount * 0.07).toFixed(2)); // 7% referral deposit commission
-          referrer.balance = Number((referrer.balance + bonusAmount).toFixed(2));
-          referrer.totalRewards = Number(((referrer.totalRewards || 0) + bonusAmount).toFixed(2));
-
-          if (refRecord) {
-            refRecord.reward = Number((refRecord.reward + bonusAmount).toFixed(2));
-            refRecord.status = 'funded';
-          }
-
-          // Record referrer bonus transaction
-          db.transactions.unshift({
-            id: `tx_ref_bonus_${Date.now()}`,
-            userId: referrer.id,
-            type: 'deposit',
-            amount: bonusAmount,
-            currency: 'GHS',
-            reference: `REF-BONUS-${user.username.toUpperCase()}`,
-            description: `7% Referral Commission Bonus from ${user.username}`,
-            status: 'completed',
-            createdAt: new Date().toISOString(),
-          });
-        }
-      }
-    }
+    creditReferralBonus(user, deposit);
   }
 
   db.saveData();
@@ -488,7 +502,8 @@ const handleWithdrawal = (req: Request, res: Response) => {
     return res.status(403).json({
       success: false,
       depositRequired: true,
-      message: 'First Deposit Required! To withdraw your earnings or GHS 50 Welcome Bonus, you must make at least 1 deposit (minimum GHS 100) to activate payout processing.',
+      message:
+        'First Deposit Required! To withdraw your earnings or GHS 50 Welcome Bonus, you must make at least 1 deposit (minimum GHS 100) to activate payout processing.',
     });
   }
 
@@ -588,19 +603,26 @@ apiRouter.get('/referrals/:userId', (req: Request, res: Response) => {
 
   // Get all users referred by this user
   const referredUsers = db.users.filter((u) => u.referredBy === userId);
-  
+
   // Also sync with db.referrals table
   const userRefs = db.referrals.filter((r) => r.referrerId === userId);
-  
+
   const totalInvited = Math.max(referredUsers.length, userRefs.length);
 
   // Count funded referrals (referred users with at least 1 deposit)
   let fundedCount = 0;
   const enrichedTeamMembers = (referredUsers.length > 0 ? referredUsers : userRefs).map((m: any) => {
-    const referredUserObj = db.users.find((u) => u.id === (m.id || m.referredUserId) || u.username === (m.username || m.referredUsername));
-    const userDeposits = db.deposits.filter((d) => d.userId === (referredUserObj ? referredUserObj.id : '') && d.status === 'confirmed');
-    const isFunded = (referredUserObj && (referredUserObj.totalDeposits || 0) > 0) || userDeposits.length > 0 || m.status === 'funded';
-    
+    const referredUserObj = db.users.find(
+      (u) => u.id === (m.id || m.referredUserId) || u.username === (m.username || m.referredUsername)
+    );
+    const userDeposits = db.deposits.filter(
+      (d) => d.userId === (referredUserObj ? referredUserObj.id : '') && d.status === 'confirmed'
+    );
+    const isFunded =
+      (referredUserObj && (referredUserObj.totalDeposits || 0) > 0) ||
+      userDeposits.length > 0 ||
+      m.status === 'funded';
+
     if (isFunded) {
       fundedCount++;
     }
@@ -759,38 +781,7 @@ apiRouter.post('/admin/deposits/:id/approve', (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
     });
 
-    // Referral commission check
-    if (user.referredBy) {
-      const referrer = db.users.find((u) => u.id === user.referredBy);
-      const refRecord = db.referrals.find((r) => r.referredUserId === user.id);
-      if (referrer) {
-        const previousDeposits = db.deposits.filter(
-          (d) => d.userId === user.id && d.status === 'confirmed' && d.id !== deposit.id
-        );
-        if (previousDeposits.length === 0) {
-          const bonusAmount = Number((deposit.amount * 0.07).toFixed(2));
-          referrer.balance = Number((referrer.balance + bonusAmount).toFixed(2));
-          referrer.totalRewards = Number(((referrer.totalRewards || 0) + bonusAmount).toFixed(2));
-
-          if (refRecord) {
-            refRecord.reward = Number((refRecord.reward + bonusAmount).toFixed(2));
-            refRecord.status = 'funded';
-          }
-
-          db.transactions.unshift({
-            id: `tx_ref_bonus_${Date.now()}`,
-            userId: referrer.id,
-            type: 'deposit',
-            amount: bonusAmount,
-            currency: 'GHS',
-            reference: `REF-BONUS-${user.username.toUpperCase()}`,
-            description: `7% Referral Commission Bonus from ${user.username}`,
-            status: 'completed',
-            createdAt: new Date().toISOString(),
-          });
-        }
-      }
-    }
+    creditReferralBonus(user, deposit);
   }
 
   db.saveData();
