@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { User, ShieldCheck, HelpCircle, Info, RefreshCw, LogOut, ArrowLeft, Cpu, Wallet, TrendingUp, AlertTriangle } from 'lucide-react';
+import { User, HelpCircle, Info, RefreshCw, LogOut, ArrowLeft, Cpu, Wallet, TrendingUp, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
 import { userService, adminService } from '../services/api';
 
@@ -137,19 +137,6 @@ export class Profile extends Component {
 
         {/* Menu Options List */}
         <div className="bg-[#10253A] rounded-2xl border border-slate-800 overflow-hidden divide-y divide-slate-800/80">
-          <button
-            onClick={() => onNavigate('admin')}
-            className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-[#0D1B2A] transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="w-5 h-5 text-[#00D4A8]" />
-              <div>
-                <p className="text-xs font-bold text-white">Admin Control Panel</p>
-                <p className="text-[10px] text-slate-400">Approve pending deposits, credit user balances & manage plans</p>
-              </div>
-            </div>
-          </button>
-
           <button
             onClick={() => alert("CloudMineX Support: Contact support@cloudminex.io for 24/7 live assistant.")}
             className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-[#0D1B2A] transition-colors"
