@@ -6,7 +6,7 @@ const getBaseURL = () => {
   if (envUrl) {
     return `${envUrl.replace(/\/$/, '')}/api`;
   }
-  return 'https://cloudminex-fece5f44d653.herokuapp.com/api';
+  return '/api';
 };
 
 const api = axios.create({

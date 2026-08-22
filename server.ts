@@ -12,22 +12,9 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   // 2. Configure CORS middleware
-  const allowedOrigins = [
-    'https://cloud-mine-x.vercel.app',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ];
-
   app.use(
     cors({
-      origin: (origin, callback) => {
-        // Allow requests with no origin (like Postman or server-to-server) or from allowed origins
-        if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Blocked by CORS policy'));
-        }
-      },
+      origin: true,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization']
