@@ -24,7 +24,11 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   RefreshCw,
-  Activity
+  Activity,
+  KeyRound,
+  Send,
+  Check,
+  RotateCcw
 } from 'lucide-react';
 import api, { userService } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
@@ -209,6 +213,16 @@ export class LandingPage extends Component {
       // Calculator State
       calcAmount: 300,
 
+      // Forgot & Reset Password Form
+      forgotEmailOrUsername: '',
+      forgotStep: 1, // 1: request OTP, 2: verify OTP & set new password
+      forgotCode: '',
+      forgotNewPassword: '',
+      forgotConfirmPassword: '',
+      showForgotNewPassword: false,
+      showForgotConfirmPassword: false,
+      forgotTargetEmail: '',
+
       // UI States
       authLoading: false,
       authMessage: null,
@@ -220,6 +234,8 @@ export class LandingPage extends Component {
     this.handleLoginSubmit = this.handleLoginSubmit.bind(this);
     this.handleRegisterSubmit = this.handleRegisterSubmit.bind(this);
     this.handleDemoLogin = this.handleDemoLogin.bind(this);
+    this.handleRequestResetOtp = this.handleRequestResetOtp.bind(this);
+    this.handleVerifyAndResetPassword = this.handleVerifyAndResetPassword.bind(this);
   }
 
   componentDidMount() {
@@ -273,7 +289,8 @@ export class LandingPage extends Component {
       }
     } catch (err) {
       console.error('Login error:', err);
-      this.setState({ authError: 'Connection error during login.' });
+      const errMsg = err?.response?.data?.message || err?.message || 'Connection error during login.';
+      this.setState({ authError: errMsg });
     } finally {
       this.setState({ authLoading: false });
     }
@@ -282,13 +299,28 @@ export class LandingPage extends Component {
   async handleRegisterSubmit(e) {
     e.preventDefault();
     const { regUsername, regPhone, regEmail, regPassword, regConfirmPassword, regRefCode, regPaymentMethod, regPaymentAddress } = this.state;
-    if (!regUsername) {
+    if (!regUsername || !regUsername.trim()) {
       this.setState({ authError: 'Please enter a username.' });
+      return;
+    }
+
+    if (!regEmail || !regEmail.trim()) {
+      this.setState({ authError: 'Please enter a valid email address for OTP verification and recovery.' });
+      return;
+    }
+
+    if (!regEmail.includes('@') || !regEmail.includes('.')) {
+      this.setState({ authError: 'Please enter a valid email format (e.g. miner@gmail.com).' });
       return;
     }
 
     if (!regPassword) {
       this.setState({ authError: 'Please enter a password.' });
+      return;
+    }
+
+    if (regPassword.length < 4) {
+      this.setState({ authError: 'Password must be at least 4 characters long.' });
       return;
     }
 
@@ -308,13 +340,13 @@ export class LandingPage extends Component {
       };
 
       const res = await userService.register({
-        username: regUsername,
-        phone: regPhone,
-        email: regEmail,
+        username: regUsername.trim(),
+        phone: regPhone ? regPhone.trim() : '',
+        email: regEmail.trim(),
         password: regPassword,
-        referralCode: regRefCode,
+        referralCode: regRefCode ? regRefCode.trim() : '',
         paymentMethod: methodLabels[regPaymentMethod] || 'Mobile Payments',
-        paymentAddress: regPaymentAddress || regPhone || 'Not provided',
+        paymentAddress: regPaymentAddress ? regPaymentAddress.trim() : regPhone || 'Not provided',
       });
 
       if (res.success && res.user) {
@@ -327,7 +359,8 @@ export class LandingPage extends Component {
       }
     } catch (err) {
       console.error('Register error:', err);
-      this.setState({ authError: 'Connection error during registration.' });
+      const errMsg = err?.response?.data?.message || err?.message || 'Connection error during registration.';
+      this.setState({ authError: errMsg });
     } finally {
       this.setState({ authLoading: false });
     }
@@ -343,6 +376,96 @@ export class LandingPage extends Component {
     } catch (err) {
       console.error('Demo login error:', err);
       this.setState({ authError: 'Failed to launch demo account.' });
+    } finally {
+      this.setState({ authLoading: false });
+    }
+  }
+
+  async handleRequestResetOtp(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const { forgotEmailOrUsername } = this.state;
+
+    if (!forgotEmailOrUsername || !forgotEmailOrUsername.trim()) {
+      this.setState({ authError: 'Please enter your registered username, email, or phone number.' });
+      return;
+    }
+
+    this.setState({ authLoading: true, authError: null, authMessage: null });
+
+    try {
+      const res = await userService.forgotPassword(forgotEmailOrUsername.trim());
+      if (res.success) {
+        this.setState({
+          forgotStep: 2,
+          forgotTargetEmail: res.email || forgotEmailOrUsername,
+          authMessage: res.message || 'A 6-digit code has been sent to your email.',
+        });
+      } else {
+        this.setState({ authError: res.message || 'Failed to send verification code.' });
+      }
+    } catch (err) {
+      console.error('Forgot password error:', err);
+      const errMsg = err?.response?.data?.message || 'Connection error. Please try again.';
+      this.setState({ authError: errMsg });
+    } finally {
+      this.setState({ authLoading: false });
+    }
+  }
+
+  async handleVerifyAndResetPassword(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const { forgotEmailOrUsername, forgotCode, forgotNewPassword, forgotConfirmPassword } = this.state;
+
+    if (!forgotCode || forgotCode.trim().length !== 6) {
+      this.setState({ authError: 'Please enter the 6-digit code sent to your email.' });
+      return;
+    }
+
+    if (!forgotNewPassword || forgotNewPassword.length < 4) {
+      this.setState({ authError: 'New password must be at least 4 characters long.' });
+      return;
+    }
+
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      this.setState({ authError: 'New passwords do not match. Please re-enter.' });
+      return;
+    }
+
+    this.setState({ authLoading: true, authError: null, authMessage: null });
+
+    try {
+      const res = await userService.resetPassword({
+        emailOrUsername: forgotEmailOrUsername.trim(),
+        code: forgotCode.trim(),
+        newPassword: forgotNewPassword,
+      });
+
+      if (res.success) {
+        this.setState({
+          authMessage: res.message || 'Password successfully updated! Logging you in...',
+        });
+        setTimeout(() => {
+          if (res.user) {
+            this.props.onLoginSuccess(res.user);
+          } else {
+            this.setState({
+              authMode: 'login',
+              loginUsername: forgotEmailOrUsername,
+              loginPassword: forgotNewPassword,
+              forgotStep: 1,
+              forgotCode: '',
+              forgotNewPassword: '',
+              forgotConfirmPassword: '',
+            });
+          }
+        }, 1200);
+      } else {
+        this.setState({ authError: res.message || 'Failed to reset password.' });
+      }
+    } catch (err) {
+      console.error('Reset password error:', err);
+      const errMsg = err?.response?.data?.message || 'Verification error. Please check the code.';
+      this.setState({ authError: errMsg });
     } finally {
       this.setState({ authLoading: false });
     }
@@ -366,6 +489,14 @@ export class LandingPage extends Component {
       regPaymentMethod,
       regPaymentAddress,
       calcAmount,
+      forgotEmailOrUsername,
+      forgotStep,
+      forgotCode,
+      forgotNewPassword,
+      forgotConfirmPassword,
+      showForgotNewPassword,
+      showForgotConfirmPassword,
+      forgotTargetEmail,
       authLoading,
       authError,
       authMessage
@@ -882,6 +1013,18 @@ export class LandingPage extends Component {
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>Register</span>
                 </button>
+
+                <button
+                  onClick={() => this.setState({ authMode: 'forgot', authError: null, authMessage: null, forgotStep: 1 })}
+                  className={`flex-1 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                    authMode === 'forgot'
+                      ? 'bg-amber-400 text-[#07111F]'
+                      : 'bg-[#10253A] text-[#94A3B8] hover:text-white'
+                  }`}
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
               </div>
 
               {/* Error / Success Feedback */}
@@ -916,9 +1059,18 @@ export class LandingPage extends Component {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                      Password
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider">
+                        Password
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => this.setState({ authMode: 'forgot', forgotEmailOrUsername: loginUsername, authError: null, authMessage: null, forgotStep: 1 })}
+                        className="text-[11px] text-[#00D4A8] hover:underline font-semibold"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
                     <div className="relative">
                       <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
                       <input
@@ -947,6 +1099,158 @@ export class LandingPage extends Component {
                     {authLoading ? 'Signing In...' : 'LOG IN TO CLOUDMINE'}
                   </button>
                 </form>
+              ) : authMode === 'forgot' ? (
+                /* FORGOT & RESET PASSWORD VIA 6-DIGIT EMAIL CODE */
+                <div className="space-y-4">
+                  {forgotStep === 1 ? (
+                    <form onSubmit={this.handleRequestResetOtp} className="space-y-3">
+                      <div className="p-3 rounded-xl bg-[#10253A] border border-[#94A3B8]/10 text-xs text-[#94A3B8] leading-relaxed">
+                        Enter your registered <strong className="text-white">username, email address, or phone number</strong>. We will send a secure <strong className="text-[#00D4A8]">6-digit verification code</strong> to your email.
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                          Username or Email Address *
+                        </label>
+                        <div className="relative">
+                          <Mail className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
+                          <input
+                            type="text"
+                            placeholder="e.g. miner123 or user@gmail.com"
+                            value={forgotEmailOrUsername}
+                            onChange={(e) => this.setState({ forgotEmailOrUsername: e.target.value })}
+                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-[#07111F] font-extrabold text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-md flex items-center justify-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        <span>{authLoading ? 'Sending 6-Digit Code...' : 'SEND 6-DIGIT VERIFICATION CODE'}</span>
+                      </button>
+
+                      <div className="text-center pt-2">
+                        <button
+                          type="button"
+                          onClick={() => this.setState({ authMode: 'login', authError: null, authMessage: null })}
+                          className="text-xs text-[#94A3B8] hover:text-white transition-colors"
+                        >
+                          &larr; Back to Login
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    /* STEP 2: VERIFY 6-DIGIT OTP & ENTER NEW PASSWORD */
+                    <form onSubmit={this.handleVerifyAndResetPassword} className="space-y-3">
+                      <div className="p-3 rounded-xl bg-[#00D4A8]/10 border border-[#00D4A8]/30 text-xs text-[#00D4A8] leading-relaxed flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                          <span>A 6-digit verification code was sent to </span>
+                          <strong className="text-white underline">{forgotTargetEmail}</strong>.
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">
+                          6-Digit Verification Code *
+                        </label>
+                        <div className="relative">
+                          <KeyRound className="w-4 h-4 text-amber-400 absolute left-3 top-3" />
+                          <input
+                            type="text"
+                            maxLength={6}
+                            placeholder="e.g. 123456"
+                            value={forgotCode}
+                            onChange={(e) => this.setState({ forgotCode: e.target.value.replace(/[^0-9]/g, '') })}
+                            className="w-full bg-[#10253A] border-2 border-amber-400/50 rounded-xl py-2.5 pl-9 pr-3 text-sm tracking-widest font-mono text-center text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                          New Password *
+                        </label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
+                          <input
+                            type={showForgotNewPassword ? 'text' : 'password'}
+                            placeholder="Enter new password (min 4 chars)"
+                            value={forgotNewPassword}
+                            onChange={(e) => this.setState({ forgotNewPassword: e.target.value })}
+                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => this.setState({ showForgotNewPassword: !showForgotNewPassword })}
+                            className="absolute right-3 top-2.5 text-[#94A3B8] hover:text-white transition-colors p-1"
+                          >
+                            {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                          Confirm New Password *
+                        </label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
+                          <input
+                            type={showForgotConfirmPassword ? 'text' : 'password'}
+                            placeholder="Confirm new password"
+                            value={forgotConfirmPassword}
+                            onChange={(e) => this.setState({ forgotConfirmPassword: e.target.value })}
+                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => this.setState({ showForgotConfirmPassword: !showForgotConfirmPassword })}
+                            className="absolute right-3 top-2.5 text-[#94A3B8] hover:text-white transition-colors p-1"
+                          >
+                            {showForgotConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-md flex items-center justify-center gap-2"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>{authLoading ? 'Updating Password...' : 'VERIFY & UPDATE PASSWORD'}</span>
+                      </button>
+
+                      <div className="flex items-center justify-between pt-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => this.setState({ forgotStep: 1, authError: null, authMessage: null })}
+                          className="text-[#94A3B8] hover:text-white transition-colors flex items-center gap-1"
+                        >
+                          &larr; Change Email
+                        </button>
+                        <button
+                          type="button"
+                          onClick={this.handleRequestResetOtp}
+                          disabled={authLoading}
+                          className="text-[#00D4A8] hover:underline font-semibold flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Resend Code</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
               ) : (
                 /* REGISTER FORM */
                 <form onSubmit={this.handleRegisterSubmit} className="space-y-3">
@@ -962,6 +1266,24 @@ export class LandingPage extends Component {
                         value={regUsername}
                         onChange={(e) => this.setState({ regUsername: e.target.value })}
                         className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-lg py-1.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                      Email Address * <span className="text-[#00D4A8] font-normal lowercase">(for 6-digit OTP reset)</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-2.5" />
+                      <input
+                        type="email"
+                        placeholder="e.g. miner@gmail.com"
+                        value={regEmail}
+                        onChange={(e) => this.setState({ regEmail: e.target.value })}
+                        className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-lg py-1.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                        required
                       />
                     </div>
                   </div>

@@ -25,6 +25,22 @@ export const userService = {
     const res = await api.post('/auth/register', userData);
     return res.data;
   },
+  forgotPassword: async (emailOrUsername) => {
+    const res = await api.post('/auth/forgot-password', { emailOrUsername });
+    return res.data;
+  },
+  verifyOtp: async (emailOrUsername, code) => {
+    const res = await api.post('/auth/verify-otp', { emailOrUsername, code });
+    return res.data;
+  },
+  resetPassword: async ({ emailOrUsername, code, newPassword }) => {
+    const res = await api.post('/auth/reset-password', { emailOrUsername, code, newPassword });
+    return res.data;
+  },
+  updatePassword: async ({ userId, currentPassword, newPassword }) => {
+    const res = await api.post('/auth/update-password', { userId, currentPassword, newPassword });
+    return res.data;
+  },
   getDemoUser: async () => {
     const res = await api.get('/users/demo');
     return res.data;

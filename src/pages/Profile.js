@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { User, HelpCircle, Info, RefreshCw, LogOut, ArrowLeft, Cpu, Wallet, TrendingUp, AlertTriangle } from 'lucide-react';
+import { User, HelpCircle, Info, RefreshCw, LogOut, ArrowLeft, Cpu, Wallet, TrendingUp, AlertTriangle, KeyRound, Check, Eye, EyeOff } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
 import { userService, adminService } from '../services/api';
 
@@ -10,7 +10,16 @@ export class Profile extends Component {
       user: null,
       isResetting: false,
       message: '',
+      errorMsg: '',
+      showChangePasswordModal: false,
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+      showNewPassword: false,
+      isUpdatingPassword: false,
     };
+
+    this.handleUpdatePassword = this.handleUpdatePassword.bind(this);
   }
 
   componentDidMount() {
@@ -43,19 +52,44 @@ export class Profile extends Component {
     }
   }
 
-  async handleResetDemoData() {
-    if (!window.confirm('Reset demo database state to default seed data?')) return;
+  async handleUpdatePassword(e) {
+    e.preventDefault();
+    const { user, currentPassword, newPassword, confirmPassword } = this.state;
+    if (!newPassword || newPassword.length < 4) {
+      this.setState({ errorMsg: 'New password must be at least 4 characters long.' });
+      return;
+    }
 
-    this.setState({ isResetting: true });
+    if (newPassword !== confirmPassword) {
+      this.setState({ errorMsg: 'New passwords do not match.' });
+      return;
+    }
+
+    this.setState({ isUpdatingPassword: true, errorMsg: '', message: '' });
+
     try {
-      const res = await adminService.resetDemo();
+      const res = await userService.updatePassword({
+        userId: user.id,
+        currentPassword,
+        newPassword,
+      });
+
       if (res.success) {
-        this.setState({ message: res.message, isResetting: false });
-        this.loadUserData();
+        this.setState({
+          message: 'Password successfully updated!',
+          showChangePasswordModal: false,
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+          isUpdatingPassword: false,
+        });
         setTimeout(() => this.setState({ message: '' }), 4000);
+      } else {
+        this.setState({ errorMsg: res.message || 'Failed to update password.', isUpdatingPassword: false });
       }
     } catch (err) {
-      this.setState({ isResetting: false });
+      const errMsg = err?.response?.data?.message || 'Error updating password.';
+      this.setState({ errorMsg: errMsg, isUpdatingPassword: false });
     }
   }
 
@@ -138,6 +172,19 @@ export class Profile extends Component {
         {/* Menu Options List */}
         <div className="bg-[#10253A] rounded-2xl border border-slate-800 overflow-hidden divide-y divide-slate-800/80">
           <button
+            onClick={() => this.setState({ showChangePasswordModal: true, errorMsg: '', message: '' })}
+            className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-[#0D1B2A] transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <KeyRound className="w-5 h-5 text-amber-400" />
+              <div>
+                <p className="text-xs font-bold text-white">Security & Password</p>
+                <p className="text-[10px] text-slate-400">Update account password</p>
+              </div>
+            </div>
+          </button>
+
+          <button
             onClick={() => alert("CloudMineX Support: Contact support@cloudminex.io for 24/7 live assistant.")}
             className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-[#0D1B2A] transition-colors"
           >
@@ -155,7 +202,7 @@ export class Profile extends Component {
             className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-[#0D1B2A] transition-colors"
           >
             <div className="flex items-center gap-3">
-              <Info className="w-5 h-5 text-amber-400" />
+              <Info className="w-5 h-5 text-[#00D4A8]" />
               <div>
                 <p className="text-xs font-bold text-white">About CloudMineX</p>
                 <p className="text-[10px] text-slate-400">Platform architecture and version information</p>
@@ -175,14 +222,102 @@ export class Profile extends Component {
             className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-[#00D4A8]/10 transition-colors"
           >
             <div className="flex items-center gap-3">
-              <LogOut className="w-5 h-5 text-[#00D4A8]" />
+              <LogOut className="w-5 h-5 text-rose-400" />
               <div>
-                <p className="text-xs font-bold text-[#00D4A8]">Log Out Account</p>
+                <p className="text-xs font-bold text-rose-400">Log Out Account</p>
                 <p className="text-[10px] text-slate-400">Sign out and return to Login/Register screen</p>
               </div>
             </div>
           </button>
         </div>
+
+        {/* Change Password Modal */}
+        {this.state.showChangePasswordModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-[#0D1B2A] border border-[#10253A] rounded-2xl max-w-sm w-full p-5 shadow-2xl relative">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-amber-400" />
+                <span>Update Password</span>
+              </h3>
+
+              {this.state.errorMsg && (
+                <div className="mb-3 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+                  {this.state.errorMsg}
+                </div>
+              )}
+
+              <form onSubmit={this.handleUpdatePassword} className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+                    Current Password (optional if not set)
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="••••••••"
+                    value={this.state.currentPassword}
+                    onChange={(e) => this.setState({ currentPassword: e.target.value })}
+                    className="w-full bg-[#10253A] border border-slate-700 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+                    New Password *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={this.state.showNewPassword ? 'text' : 'password'}
+                      placeholder="Enter new password"
+                      value={this.state.newPassword}
+                      onChange={(e) => this.setState({ newPassword: e.target.value })}
+                      className="w-full bg-[#10253A] border border-slate-700 rounded-xl py-2 pl-3 pr-9 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => this.setState({ showNewPassword: !this.state.showNewPassword })}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-white"
+                    >
+                      {this.state.showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+                    Confirm New Password *
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Confirm new password"
+                    value={this.state.confirmPassword}
+                    onChange={(e) => this.setState({ confirmPassword: e.target.value })}
+                    className="w-full bg-[#10253A] border border-slate-700 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                    required
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => this.setState({ showChangePasswordModal: false, errorMsg: '' })}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={this.state.isUpdatingPassword}
+                    className="flex-1 py-2.5 rounded-xl bg-[#00D4A8] text-[#07111F] text-xs font-extrabold hover:brightness-110 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{this.state.isUpdatingPassword ? 'Saving...' : 'Save Password'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

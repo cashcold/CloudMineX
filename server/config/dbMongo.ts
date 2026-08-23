@@ -17,6 +17,7 @@ const userSchema = new Schema<UserCloudMineX>({
   username: { type: String, required: true },
   email: { type: String },
   phone: { type: String },
+  password: { type: String },
   paymentMethod: { type: String },
   paymentAddress: { type: String },
   balance: { type: Number, default: 0 },
@@ -168,17 +169,18 @@ export const AppSettingsModel = mongoose.models.AppSettingsCloudMineX || mongoos
 let isConnected = false;
 
 export async function connectMongoDB(): Promise<boolean> {
-  const mongoUri = process.env.MONGO_URI;
+  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
   if (!mongoUri) {
-    console.log('[MongoDB] MONGO_URI environment variable is not set. Operating with local persistent store.');
+    console.log('[MongoDB] MONGODB_URI/MONGO_URI environment variable is not set. Operating with local persistent store.');
     return false;
   }
 
   if (isConnected) return true;
 
   try {
-    console.log('[MongoDB] Attempting to connect to MongoDB cluster...');
+    console.log('[MongoDB] Attempting to connect to MongoDB cluster (Database: CloudMineX)...');
     await mongoose.connect(mongoUri, {
+      dbName: process.env.MONGODB_DB_NAME || 'CloudMineX',
       serverSelectionTimeoutMS: 5000,
     });
     isConnected = true;

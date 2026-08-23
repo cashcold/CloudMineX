@@ -12,6 +12,8 @@ import { calculateEstimatedReward } from '../services/rewardEngine';
 import { getCryptoRates, convertFiatToCrypto } from '../services/cryptoPriceService';
 import { mobileMoneyProvider } from '../services/payment/mobileMoneyProvider';
 import { cryptoProvider } from '../services/payment/cryptoProvider';
+import { sendPasswordResetEmail } from '../services/emailService';
+import { UserModel, isMongoConnected } from '../config/dbMongo';
 
 export const apiRouter = Router();
 
@@ -59,23 +61,175 @@ const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) =
   });
 };
 
-// ================= USER & AUTH ENDPOINTS =================
-apiRouter.post('/auth/login', (req: Request, res: Response) => {
+// ================= USER & AUTH ENDPOINTS (MONGODB AUTHORITATIVE) =================
+
+export function findUserByQuery(rawQuery: string): UserCloudMineX | null {
+  if (!rawQuery) return null;
+  const clean = rawQuery.trim();
+  const lower = clean.toLowerCase();
+  const digitsOnly = clean.replace(/\D/g, '');
+
+  // 1. Direct match on username or email or phone
+  let user = db.users.find(
+    (u) =>
+      (u.username && u.username.toLowerCase() === lower) ||
+      (u.email && u.email.toLowerCase() === lower) ||
+      (u.phone && u.phone.trim() === clean)
+  );
+  if (user) return user;
+
+  // 2. Phone match by trailing digits (at least 7 digits)
+  if (digitsOnly && digitsOnly.length >= 7) {
+    user = db.users.find(
+      (u) => u.phone && u.phone.replace(/\D/g, '').endsWith(digitsOnly.slice(-9))
+    );
+    if (user) return user;
+  }
+
+  // 3. Email query matching username (e.g., query 'cashcold99@gmail.com' -> matches username 'cashcold99')
+  if (lower.includes('@')) {
+    const prefix = lower.split('@')[0].trim();
+    user = db.users.find(
+      (u) =>
+        (u.username && u.username.toLowerCase() === prefix) ||
+        (u.email && u.email.split('@')[0].toLowerCase() === prefix)
+    );
+    if (user) return user;
+  }
+
+  // 4. Username query matching email prefix (e.g. query 'cashcold99' matches 'cashcold99@gmail.com')
+  user = db.users.find(
+    (u) =>
+      u.email &&
+      (u.email.toLowerCase() === `${lower}@cloudminex.io` ||
+       u.email.toLowerCase() === `${lower}@gmail.com` ||
+       u.email.split('@')[0].toLowerCase() === lower)
+  );
+
+  return user || null;
+}
+
+// Live asynchronous finder that prioritizes MongoDB Atlas as the single source of truth
+export async function findUserLive(rawQuery: string): Promise<UserCloudMineX | null> {
+  if (!rawQuery) return null;
+  const clean = rawQuery.trim();
+  const lower = clean.toLowerCase();
+  const digitsOnly = clean.replace(/\D/g, '');
+
+  // 1. If MongoDB is connected, query MongoDB Atlas directly
+  if (isMongoConnected()) {
+    try {
+      const safeEscaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const conditions: any[] = [
+        { username: new RegExp('^' + safeEscaped + '$', 'i') },
+        { email: new RegExp('^' + safeEscaped + '$', 'i') },
+        { phone: clean },
+      ];
+
+      if (digitsOnly && digitsOnly.length >= 7) {
+        conditions.push({ phone: new RegExp(digitsOnly.slice(-9) + '$') });
+      }
+
+      if (lower.includes('@')) {
+        const prefix = lower.split('@')[0].trim();
+        const prefixEscaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        conditions.push({ username: new RegExp('^' + prefixEscaped + '$', 'i') });
+      }
+
+      const mongoDoc: any = await UserModel.findOne({ $or: conditions } as any).lean();
+      if (mongoDoc) {
+        const userObj: UserCloudMineX = {
+          id: mongoDoc.id,
+          username: mongoDoc.username,
+          email: mongoDoc.email,
+          phone: mongoDoc.phone,
+          password: mongoDoc.password,
+          paymentMethod: mongoDoc.paymentMethod,
+          paymentAddress: mongoDoc.paymentAddress,
+          balance: mongoDoc.balance || 0,
+          totalDeposits: mongoDoc.totalDeposits || 0,
+          currency: mongoDoc.currency || 'GHS',
+          referralCode: mongoDoc.referralCode || mongoDoc.username,
+          referredBy: mongoDoc.referredBy || null,
+          vipLevel: mongoDoc.vipLevel || 1,
+          vipTier: mongoDoc.vipTier || 'Bronze VIP',
+          totalRewards: mongoDoc.totalRewards || 0,
+          activeContracts: mongoDoc.activeContracts || 0,
+          createdAt: mongoDoc.createdAt || new Date().toISOString(),
+          updatedAt: mongoDoc.updatedAt || new Date().toISOString(),
+        };
+
+        // Keep local cache in sync
+        const idx = db.users.findIndex((u) => u.id === userObj.id);
+        if (idx >= 0) {
+          db.users[idx] = userObj;
+        } else {
+          db.users.push(userObj);
+        }
+        return userObj;
+      } else {
+        // If not found in MongoDB, it means the user was deleted in MongoDB directly!
+        // Remove from local memory cache so deletions in Mongo immediately take effect
+        const hadInCache = db.users.some(
+          (u) =>
+            u.username.toLowerCase() === lower ||
+            (u.email && u.email.toLowerCase() === lower) ||
+            u.phone === clean
+        );
+        if (hadInCache) {
+          db.users = db.users.filter(
+            (u) =>
+              u.username.toLowerCase() !== lower &&
+              (u.email ? u.email.toLowerCase() !== lower : true) &&
+              u.phone !== clean
+          );
+          db.saveData();
+        }
+        return null;
+      }
+    } catch (err: any) {
+      console.warn('[MongoDB] Live query error, checking memory cache:', err.message);
+    }
+  }
+
+  // Fallback to local store if MongoDB is not reachable
+  return findUserByQuery(rawQuery);
+}
+
+apiRouter.post('/auth/login', async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
   if (!username) {
-    return res.status(400).json({ success: false, message: 'Username or phone number is required.' });
+    return res.status(400).json({ success: false, message: 'Username, email, or phone number is required.' });
   }
 
-  const user = db.users.find(
-    (u) => u.username.toLowerCase() === username.trim().toLowerCase() || u.phone === username.trim()
-  );
+  const user = await findUserLive(username);
 
   if (!user) {
     return res.status(404).json({
       success: false,
       message: 'Account not found. Please register first to create an account.',
     });
+  }
+
+  // If user has a set password and password was entered, verify it
+  if (user.password && password && user.password !== password) {
+    return res.status(401).json({
+      success: false,
+      message: 'Incorrect password. Please verify or use "Forgot Password" to reset.',
+    });
+  }
+
+  // If user has no password set and logged in, set this password
+  if (!user.password && password) {
+    user.password = password.trim();
+    user.updatedAt = new Date().toISOString();
+    db.saveData();
+    if (isMongoConnected()) {
+      try {
+        await UserModel.updateOne({ id: user.id }, { $set: { password: user.password, updatedAt: user.updatedAt } });
+      } catch (e) {}
+    }
   }
 
   res.json({
@@ -85,86 +239,358 @@ apiRouter.post('/auth/login', (req: Request, res: Response) => {
   });
 });
 
-apiRouter.post('/auth/register', (req: Request, res: Response) => {
-  const { username, phone, email, password, referralCode, paymentMethod, paymentAddress } = req.body;
+apiRouter.post('/auth/register', async (req: Request, res: Response) => {
+  try {
+    const { username, phone, email, password, referralCode, paymentMethod, paymentAddress } = req.body;
 
-  if (!username) {
-    return res.status(400).json({ success: false, message: 'Username is required.' });
-  }
+    if (!username || !username.trim()) {
+      return res.status(400).json({ success: false, message: 'Username is required.' });
+    }
 
-  const existingUser = db.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
-  if (existingUser) {
+    const cleanUsername = username.trim();
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+
+    // Check directly against MongoDB
+    const existingUser = (await findUserLive(cleanUsername)) || (cleanEmail ? await findUserLive(cleanEmail) : null);
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: `An account with username "${cleanUsername}" or email "${cleanEmail}" already exists. Please log in with your password, or use the "Reset" tab to set a new password.`,
+      });
+    }
+
+    // Find referrer if referralCode provided (matching username or referralCode)
+    let referrer = null;
+    if (referralCode && typeof referralCode === 'string' && referralCode.trim()) {
+      const codeTrimmed = referralCode.trim().toLowerCase();
+      referrer = await findUserLive(codeTrimmed);
+      if (!referrer) {
+        referrer = db.users.find(
+          (u) =>
+            (u.username && u.username.toLowerCase() === codeTrimmed) ||
+            (u.referralCode && u.referralCode.toLowerCase() === codeTrimmed)
+        );
+      }
+    }
+
+    const newUser: UserCloudMineX = {
+      id: `usr_${Date.now()}`,
+      username: cleanUsername,
+      email: cleanEmail || `${cleanUsername.toLowerCase()}@cloudminex.io`,
+      phone: phone ? phone.trim() : '+233 24 000 0000',
+      password: password ? password.trim() : undefined,
+      paymentMethod: paymentMethod || 'Mobile Payments',
+      paymentAddress: paymentAddress || phone || 'Not specified',
+      balance: 50.0, // Welcome signup bonus
+      totalDeposits: 0,
+      currency: 'GHS',
+      activeContracts: 0,
+      totalRewards: 0,
+      referralCode: cleanUsername, // Use username as referral code parameter
+      referredBy: referrer ? referrer.id : null,
+      vipLevel: 1,
+      vipTier: 'Bronze VIP',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Save to local cache
+    db.users.push(newUser);
+
+    // Link in db.referrals if referrer exists
+    if (referrer) {
+      db.referrals.push({
+        id: `ref_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        referrerId: referrer.id,
+        referredUserId: newUser.id,
+        referredUsername: newUser.username,
+        createdAt: new Date().toISOString(),
+        reward: 0, // Rewarded upon deposit
+        status: 'pending', // Pending deposit
+      });
+    }
+
+    // Record Welcome Bonus Transaction
+    db.transactions.unshift({
+      id: `tx_welcome_${Date.now()}`,
+      userId: newUser.id,
+      type: 'deposit',
+      amount: 50.0,
+      currency: 'GHS',
+      reference: `WELCOME-BONUS-${newUser.id.slice(-4)}`,
+      description: 'Welcome Bonus Credit',
+      status: 'completed',
+      createdAt: new Date().toISOString(),
+    });
+
+    db.saveData();
+
+    // Directly save to MongoDB as the main heart
+    if (isMongoConnected()) {
+      try {
+        await UserModel.create(newUser);
+        console.log(`[MongoDB] Created new user document for "${newUser.username}" in MongoDB!`);
+      } catch (mErr: any) {
+        console.warn('[MongoDB] MongoDB creation note:', mErr.message);
+      }
+    }
+
     return res.json({
       success: true,
-      message: `Welcome back, ${existingUser.username}!`,
-      user: existingUser,
+      message: 'Account created successfully! Enjoy your GHS 50 welcome credit.',
+      user: newUser,
+    });
+  } catch (error: any) {
+    console.error('[Auth] Registration error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred during registration. Please try again.',
+    });
+  }
+});
+
+// ================= PASSWORD RESET WITH 6-DIGIT EMAIL CODE =================
+
+// 1. Request Password Reset OTP to Email
+apiRouter.post('/auth/forgot-password', async (req: Request, res: Response) => {
+  const { emailOrUsername } = req.body;
+
+  if (!emailOrUsername || !emailOrUsername.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please enter your registered email, username, or phone number.',
     });
   }
 
-  // Find referrer if referralCode provided (matching username or referralCode)
-  let referrer = null;
-  if (referralCode) {
-    referrer = db.users.find(
-      (u) =>
-        u.username.toLowerCase() === referralCode.trim().toLowerCase() ||
-        u.referralCode.toLowerCase() === referralCode.trim().toLowerCase()
-    );
-  }
+  const query = emailOrUsername.trim();
+  const user = await findUserLive(query);
 
-  const newUser: UserCloudMineX = {
-    id: `usr_${Date.now()}`,
-    username,
-    email: email || `${username.toLowerCase()}@cloudminex.io`,
-    phone: phone || '+233 24 000 0000',
-    paymentMethod: paymentMethod || 'Mobile Payments',
-    paymentAddress: paymentAddress || phone || 'Not specified',
-    balance: 50.0, // Welcome signup bonus
-    totalDeposits: 0,
-    currency: 'GHS',
-    activeContracts: 0,
-    totalRewards: 0,
-    referralCode: username, // Use username as referral code parameter
-    referredBy: referrer ? referrer.id : null,
-    vipLevel: 1,
-    vipTier: 'Bronze VIP',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  db.users.push(newUser);
-
-  // Link in db.referrals if referrer exists
-  if (referrer) {
-    db.referrals.push({
-      id: `ref_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      referrerId: referrer.id,
-      referredUserId: newUser.id,
-      referredUsername: newUser.username,
-      createdAt: new Date().toISOString(),
-      reward: 0, // Rewarded upon deposit
-      status: 'pending', // Pending deposit
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: `No account found for "${query}". Please check your spelling or register a new account.`,
     });
   }
 
-  // Record Welcome Bonus Transaction
-  db.transactions.unshift({
-    id: `tx_welcome_${Date.now()}`,
-    userId: newUser.id,
-    type: 'deposit',
-    amount: 50.0,
-    currency: 'GHS',
-    reference: `WELCOME-BONUS-${newUser.id.slice(-4)}`,
-    description: 'Welcome Bonus Credit',
-    status: 'completed',
-    createdAt: new Date().toISOString(),
+  // If user provided a valid email in query and user's saved email is a placeholder or different, update it
+  if (query.includes('@') && query.includes('.')) {
+    user.email = query.toLowerCase();
+    user.updatedAt = new Date().toISOString();
+    db.saveData();
+    if (isMongoConnected()) {
+      try {
+        await UserModel.updateOne({ id: user.id }, { $set: { email: user.email, updatedAt: user.updatedAt } });
+      } catch (e) {}
+    }
+  }
+
+  // Determine destination email
+  let targetEmail = user.email;
+  if (!targetEmail || !targetEmail.includes('@') || targetEmail.endsWith('@cloudminex.io')) {
+    if (query.includes('@')) {
+      targetEmail = query.toLowerCase();
+      user.email = targetEmail;
+      db.saveData();
+      if (isMongoConnected()) {
+        try {
+          await UserModel.updateOne({ id: user.id }, { $set: { email: user.email, updatedAt: user.updatedAt } });
+        } catch (e) {}
+      }
+    } else {
+      targetEmail = `${user.username.toLowerCase()}@gmail.com`;
+    }
+  }
+
+  // Generate 6-digit numeric OTP code
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  // Clear previous OTPs for this user
+  db.passwordResetOtps = db.passwordResetOtps.filter(
+    (o) =>
+      o.emailOrUsername.toLowerCase() !== user.username.toLowerCase() &&
+      o.emailOrUsername.toLowerCase() !== (user.email || '').toLowerCase() &&
+      o.emailOrUsername.toLowerCase() !== query.toLowerCase() &&
+      o.expiresAt > Date.now()
+  );
+
+  // Store new OTP indexed by targetEmail, username, and query
+  db.passwordResetOtps.push({
+    emailOrUsername: targetEmail.toLowerCase(),
+    code: otpCode,
+    expiresAt,
   });
+  db.passwordResetOtps.push({
+    emailOrUsername: user.username.toLowerCase(),
+    code: otpCode,
+    expiresAt,
+  });
+  if (query.toLowerCase() !== targetEmail.toLowerCase() && query.toLowerCase() !== user.username.toLowerCase()) {
+    db.passwordResetOtps.push({
+      emailOrUsername: query.toLowerCase(),
+      code: otpCode,
+      expiresAt,
+    });
+  }
 
-  db.saveData();
+  console.log(`[Auth] Generated 6-digit OTP code for ${user.username} (${targetEmail}): ${otpCode}`);
+
+  // Send Email via SMTP
+  const emailResult = await sendPasswordResetEmail(targetEmail, user.username, otpCode);
 
   res.json({
     success: true,
-    message: 'Account created successfully! Enjoy your GHS 50 welcome credit.',
-    user: newUser,
+    message: emailResult.success
+      ? `A 6-digit verification code has been sent to ${targetEmail}. Please check your inbox or spam.`
+      : `Verification code generated: ${otpCode} (SMTP: ${emailResult.message})`,
+    email: targetEmail,
+    username: user.username,
+    otpSent: emailResult.success,
+    code: !emailResult.success ? otpCode : undefined, // Dev fallback if SMTP fails
+  });
+});
+
+// 2. Verify 6-digit Code
+apiRouter.post('/auth/verify-otp', async (req: Request, res: Response) => {
+  const { emailOrUsername, code } = req.body;
+
+  if (!emailOrUsername || !code) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email/username and 6-digit code are required.',
+    });
+  }
+
+  const cleanCode = code.toString().trim();
+  const query = emailOrUsername.trim().toLowerCase();
+  const user = await findUserLive(emailOrUsername);
+
+  const validOtp = db.passwordResetOtps.find(
+    (o) =>
+      (o.emailOrUsername.toLowerCase() === query ||
+       (user && (o.emailOrUsername.toLowerCase() === user.username.toLowerCase() || (user.email && o.emailOrUsername.toLowerCase() === user.email.toLowerCase())))) &&
+      o.code === cleanCode &&
+      o.expiresAt > Date.now()
+  );
+
+  if (!validOtp) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid or expired 6-digit verification code. Please check or request a new code.',
+    });
+  }
+
+  res.json({
+    success: true,
+    message: 'Verification code confirmed. You may now enter your new password.',
+  });
+});
+
+// 3. Reset / Update Password using Verified Code
+apiRouter.post('/auth/reset-password', async (req: Request, res: Response) => {
+  const { emailOrUsername, code, newPassword } = req.body;
+
+  if (!emailOrUsername || !code || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email/username, 6-digit code, and new password are required.',
+    });
+  }
+
+  if (newPassword.length < 4) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 4 characters long.',
+    });
+  }
+
+  const cleanCode = code.toString().trim();
+  const query = emailOrUsername.trim().toLowerCase();
+  const user = await findUserLive(emailOrUsername);
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'Account not found.',
+    });
+  }
+
+  const validOtpIndex = db.passwordResetOtps.findIndex(
+    (o) =>
+      (o.emailOrUsername.toLowerCase() === query ||
+       o.emailOrUsername.toLowerCase() === user.username.toLowerCase() ||
+       (user.email && o.emailOrUsername.toLowerCase() === user.email.toLowerCase())) &&
+      o.code === cleanCode &&
+      o.expiresAt > Date.now()
+  );
+
+  if (validOtpIndex === -1) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid or expired verification code. Please request a new 6-digit code.',
+    });
+  }
+
+  // Update password
+  user.password = newPassword.trim();
+  if (query.includes('@') && query.includes('.')) {
+    user.email = query.toLowerCase();
+  }
+  user.updatedAt = new Date().toISOString();
+
+  // Invalidate OTP
+  db.passwordResetOtps.splice(validOtpIndex, 1);
+  db.saveData();
+
+  // Sync to MongoDB as source of truth
+  if (isMongoConnected()) {
+    try {
+      await UserModel.updateOne(
+        { id: user.id },
+        { $set: { password: user.password, email: user.email, updatedAt: user.updatedAt } }
+      );
+      console.log(`[MongoDB] Password updated directly in MongoDB Atlas for user ${user.username}`);
+    } catch (e: any) {
+      console.warn('[MongoDB] Mongo password update error:', e.message);
+    }
+  }
+
+  res.json({
+    success: true,
+    message: 'Password updated successfully! You are now logged in.',
+    user,
+  });
+});
+
+// 4. Update Password (Logged in profile)
+apiRouter.post('/auth/update-password', async (req: Request, res: Response) => {
+  const { userId, currentPassword, newPassword } = req.body;
+
+  if (!userId || !newPassword) {
+    return res.status(400).json({ success: false, message: 'User ID and new password are required.' });
+  }
+
+  const user = db.users.find((u) => u.id === userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found.' });
+  }
+
+  if (user.password && currentPassword && user.password !== currentPassword) {
+    return res.status(400).json({ success: false, message: 'Current password is incorrect.' });
+  }
+
+  user.password = newPassword.trim();
+  user.updatedAt = new Date().toISOString();
+  db.saveData();
+
+  try {
+    await UserModel.updateOne({ id: user.id }, { $set: { password: user.password, updatedAt: user.updatedAt } });
+  } catch (e) {}
+
+  res.json({
+    success: true,
+    message: 'Password updated successfully.',
   });
 });
 
@@ -177,12 +603,56 @@ apiRouter.get('/users/demo', (req: Request, res: Response) => {
   res.json({ success: true, user: demoUser });
 });
 
-apiRouter.get('/users/:id', (req: Request, res: Response) => {
+apiRouter.get('/users/:id', async (req: Request, res: Response) => {
+  if (isMongoConnected()) {
+    try {
+      const mongoUser: any = await UserModel.findOne({ id: req.params.id } as any).lean();
+      if (mongoUser) {
+        const userObj = mongoUser as UserCloudMineX;
+        const idx = db.users.findIndex((u) => u.id === userObj.id);
+        if (idx >= 0) db.users[idx] = userObj;
+        else db.users.push(userObj);
+        return res.json({ success: true, user: userObj });
+      } else {
+        // User was deleted in MongoDB!
+        db.users = db.users.filter((u) => u.id !== req.params.id);
+        db.saveData();
+        return res.status(404).json({ success: false, message: 'User not found or deleted from database.' });
+      }
+    } catch (e) {}
+  }
   const user = db.users.find((u) => u.id === req.params.id);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
   res.json({ success: true, user });
+});
+
+// Database Sync Endpoints
+apiRouter.get('/sync/status', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    mongoConnected: isMongoConnected(),
+    cachedUsers: db.users.length,
+    cachedPlans: db.miningPlans.length,
+    cachedDeposits: db.deposits.length,
+    cachedContracts: db.miningContracts.length,
+  });
+});
+
+apiRouter.post('/sync/refresh', async (req: Request, res: Response) => {
+  if (isMongoConnected()) {
+    await db.syncFromMongo();
+    return res.json({
+      success: true,
+      message: 'Successfully refreshed all data from MongoDB Atlas database.',
+      userCount: db.users.length,
+    });
+  }
+  res.json({
+    success: false,
+    message: 'MongoDB is not connected. Operating in local storage mode.',
+  });
 });
 
 // ================= MINING PLANS =================

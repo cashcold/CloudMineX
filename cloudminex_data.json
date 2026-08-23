@@ -150,6 +150,17 @@
   "withdrawals": [],
   "transactions": [
     {
+      "id": "tx_welcome_1787486272264",
+      "userId": "usr_1787486272264",
+      "type": "deposit",
+      "amount": 50,
+      "currency": "GHS",
+      "reference": "WELCOME-BONUS-2264",
+      "description": "Welcome Bonus Credit",
+      "status": "completed",
+      "createdAt": "2026-08-23T11:57:52.264Z"
+    },
+    {
       "id": "tx_seed_001",
       "userId": "usr_demo_101",
       "type": "deposit",
@@ -268,7 +279,9 @@
     "baseCurrency": "GHS",
     "btcAddress": "15512yaegwoVpZ2mjnsZ8mmVdhMnbcYybZ",
     "ethAddress": "0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44",
+    "usdtErc20Address": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
     "usdtTrc20Address": "TMmpdCUFH9xJ5efivRdyAw8MBVGqdsJmpX",
+    "usdtBep20Address": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
     "confirmationsBtc": 3,
     "confirmationsEth": 12,
     "confirmationsUsdt": 12,

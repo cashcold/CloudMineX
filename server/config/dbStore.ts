@@ -6,6 +6,7 @@ export interface UserCloudMineX {
   username: string;
   email?: string;
   phone?: string;
+  password?: string;
   paymentMethod?: string;
   paymentAddress?: string;
   balance: number;
@@ -166,6 +167,7 @@ class DBStore {
   public transactions: TransactionCloudMineX[] = [];
   public referrals: ReferralCloudMineX[] = [];
   public chatMessages: ChatMessageCloudMineX[] = [];
+  public passwordResetOtps: Array<{ emailOrUsername: string; code: string; expiresAt: number }> = [];
   public settings: AppSettingsCloudMineX = {
     demoMode: true,
     baseCurrency: 'GHS',
@@ -469,12 +471,13 @@ class DBStore {
       if (!isMongoConnected()) return;
 
       const mongoUsers = await UserModel.find().lean();
-      if (mongoUsers && mongoUsers.length > 0) {
+      if (mongoUsers) {
         this.users = mongoUsers.map((u: any) => ({
           id: u.id,
           username: u.username,
           email: u.email,
           phone: u.phone,
+          password: u.password,
           paymentMethod: u.paymentMethod,
           paymentAddress: u.paymentAddress,
           balance: u.balance || 0,
@@ -511,7 +514,7 @@ class DBStore {
       this.ensureDefaultPlans();
 
       const mongoDeposits = await DepositModel.find().lean();
-      if (mongoDeposits && mongoDeposits.length > 0) {
+      if (mongoDeposits) {
         this.deposits = mongoDeposits.map((d: any) => ({
           id: d.id,
           userId: d.userId,
@@ -533,7 +536,7 @@ class DBStore {
       }
 
       const mongoWithdrawals = await WithdrawalModel.find().lean();
-      if (mongoWithdrawals && mongoWithdrawals.length > 0) {
+      if (mongoWithdrawals) {
         this.withdrawals = mongoWithdrawals.map((w: any) => ({
           id: w.id,
           userId: w.userId,
@@ -549,7 +552,7 @@ class DBStore {
       }
 
       const mongoTx = await TransactionModel.find().lean();
-      if (mongoTx && mongoTx.length > 0) {
+      if (mongoTx) {
         this.transactions = mongoTx.map((t: any) => ({
           id: t.id,
           userId: t.userId,
@@ -564,7 +567,7 @@ class DBStore {
         }));
       }
 
-      console.log('[MongoDB] Synced all records from MongoDB database into active memory!');
+      console.log(`[MongoDB] Synced all records from MongoDB database into active memory (${this.users.length} users active).`);
     } catch (err) {
       console.error('[MongoDB] Fetch error:', err);
     }
