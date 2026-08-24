@@ -128,6 +128,10 @@ export const referralService = {
     const res = await api.get(`/referrals/${userId}`);
     return res.data;
   },
+  claimMilestone: async (userId, milestoneId) => {
+    const res = await api.post('/referrals/claim-milestone', { userId, milestoneId });
+    return res.data;
+  },
 };
 
 export const adminService = {

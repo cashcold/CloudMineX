@@ -16,6 +16,7 @@ export interface UserCloudMineX {
   referredBy?: string | null;
   vipLevel?: number;
   vipTier?: string;
+  claimedMilestones?: string[];
   totalRewards: number;
   activeContracts: number;
   createdAt: string;
@@ -171,11 +172,11 @@ class DBStore {
   public settings: AppSettingsCloudMineX = {
     demoMode: true,
     baseCurrency: 'GHS',
-    btcAddress: process.env.BTC_DEPOSIT_ADDRESS || 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-    ethAddress: process.env.ETH_DEPOSIT_ADDRESS || '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
-    usdtErc20Address: process.env.USDT_ERC20_ADDRESS || '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
-    usdtTrc20Address: process.env.USDT_TRC20_ADDRESS || 'TX9Z2s213xS9281a8c9831920zmsa',
-    usdtBep20Address: process.env.USDT_BEP20_ADDRESS || '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
+    btcAddress: process.env.BTC_DEPOSIT_ADDRESS || '15512yaegwoVpZ2mjnsZ8mmVdhMnbcYybZ',
+    ethAddress: process.env.ETH_DEPOSIT_ADDRESS || '0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44',
+    usdtErc20Address: process.env.USDT_ERC20_ADDRESS || '0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44',
+    usdtTrc20Address: process.env.USDT_TRC20_ADDRESS || 'TMmpdCUFH9xJ5efivRdyAw8MBVGqdsJmpX',
+    usdtBep20Address: process.env.USDT_BEP20_ADDRESS || '0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44',
     confirmationsBtc: Number(process.env.REQUIRED_CONFIRMATIONS_BTC) || 3,
     confirmationsEth: Number(process.env.REQUIRED_CONFIRMATIONS_ETH) || 12,
     confirmationsUsdt: Number(process.env.REQUIRED_CONFIRMATIONS_USDT) || 12,
@@ -551,6 +552,28 @@ class DBStore {
         }));
       }
 
+      const mongoContracts = await MiningContractModel.find().lean();
+      if (mongoContracts && mongoContracts.length > 0) {
+        this.miningContracts = mongoContracts.map((c: any) => ({
+          id: c.id,
+          userId: c.userId,
+          planId: c.planId,
+          planName: c.planName,
+          amount: c.amount,
+          duration: c.duration,
+          rewardRate: c.rewardRate,
+          estimatedDailyReward: c.estimatedDailyReward,
+          estimatedTotalReward: c.estimatedTotalReward,
+          accumulatedReward: c.accumulatedReward || 0,
+          startDate: c.startDate || c.createdAt,
+          endDate: c.endDate,
+          lastCalculatedAt: c.lastCalculatedAt || c.startDate || c.createdAt,
+          status: c.status || 'active',
+          createdAt: c.createdAt || new Date().toISOString(),
+          updatedAt: c.updatedAt || new Date().toISOString(),
+        }));
+      }
+
       const mongoTx = await TransactionModel.find().lean();
       if (mongoTx) {
         this.transactions = mongoTx.map((t: any) => ({
@@ -565,6 +588,46 @@ class DBStore {
           metadata: t.metadata,
           createdAt: t.createdAt || new Date().toISOString(),
         }));
+      }
+
+      const mongoReferrals = await ReferralModel.find().lean();
+      if (mongoReferrals && mongoReferrals.length > 0) {
+        this.referrals = mongoReferrals.map((r: any) => ({
+          id: r.id,
+          referrerId: r.referrerId,
+          referredUserId: r.referredUserId || r.refereeId || '',
+          referredUsername: r.referredUsername || r.refereeUsername || 'Member',
+          referralCode: r.referralCode,
+          reward: r.reward ?? r.bonusAmount ?? 0,
+          status: r.status || 'completed',
+          createdAt: r.createdAt || new Date().toISOString(),
+        }));
+      }
+
+      const mongoChat = await ChatMessageModel.find().lean();
+      if (mongoChat && mongoChat.length > 0) {
+        this.chatMessages = mongoChat.map((cm: any) => ({
+          id: cm.id,
+          username: cm.username || cm.sender || 'Member',
+          text: cm.text,
+          badge: cm.badge,
+          type: cm.type || 'chat',
+          createdAt: cm.createdAt || cm.timestamp || new Date().toISOString(),
+        }));
+      }
+
+      const mongoSettings = await AppSettingsModel.findOne().lean();
+      if (mongoSettings) {
+        this.settings = {
+          ...this.settings,
+          ...(mongoSettings as any),
+          // Ensure configured environment / newest user addresses take priority if set
+          btcAddress: process.env.BTC_DEPOSIT_ADDRESS || (mongoSettings as any).btcAddress || '15512yaegwoVpZ2mjnsZ8mmVdhMnbcYybZ',
+          ethAddress: process.env.ETH_DEPOSIT_ADDRESS || (mongoSettings as any).ethAddress || '0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44',
+          usdtTrc20Address: process.env.USDT_TRC20_ADDRESS || (mongoSettings as any).usdtTrc20Address || 'TMmpdCUFH9xJ5efivRdyAw8MBVGqdsJmpX',
+          usdtErc20Address: process.env.USDT_ERC20_ADDRESS || (mongoSettings as any).usdtErc20Address || '0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44',
+          usdtBep20Address: process.env.USDT_BEP20_ADDRESS || (mongoSettings as any).usdtBep20Address || '0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44',
+        };
       }
 
       console.log(`[MongoDB] Synced all records from MongoDB database into active memory (${this.users.length} users active).`);
@@ -740,7 +803,7 @@ class DBStore {
         amount: 1000.00,
         currency: 'GHS',
         reference: 'DEP-MOMO-9182',
-        description: 'Mobile Money Welcome Demo Credit',
+        description: 'Mobile Money Welcome Credit',
         status: 'completed',
         createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
       },

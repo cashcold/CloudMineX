@@ -6,7 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import { apiRouter } from './server/routes/api';
 import { connectMongoDB } from './server/config/dbMongo';
 import { db } from './server/config/dbStore';
-// import { db } from './server/config/dbStore';
+import { processMiningYields } from './server/services/rewardEngine';
 
 async function startServer() {
   const app = express();
@@ -56,6 +56,28 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`CloudMineX Server running on http://0.0.0.0:${PORT}`);
+
+    // Process any mining yields immediately on boot
+    try {
+      const initResult = processMiningYields();
+      if (initResult.creditedTotal > 0 || initResult.contractsCompleted > 0) {
+        console.log(`[RewardEngine] Initialized: Credited GHS ${initResult.creditedTotal.toFixed(2)}, ${initResult.contractsCompleted} contracts matured.`);
+      }
+    } catch (e) {
+      console.error('[RewardEngine] Init yield processing error:', e);
+    }
+
+    // Auto-calculate and credit 24h mining yields every 60 seconds
+    setInterval(() => {
+      try {
+        const tickResult = processMiningYields();
+        if (tickResult.creditedTotal > 0 || tickResult.contractsCompleted > 0) {
+          console.log(`[RewardEngine] Auto-tick: Credited GHS ${tickResult.creditedTotal.toFixed(2)} to users, ${tickResult.contractsCompleted} matured.`);
+        }
+      } catch (err) {
+        console.error('[RewardEngine] Auto-tick error:', err);
+      }
+    }, 60 * 1000);
   });
 }
 

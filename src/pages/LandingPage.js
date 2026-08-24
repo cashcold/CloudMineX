@@ -374,8 +374,8 @@ export class LandingPage extends Component {
         this.props.onLoginSuccess(res.user);
       }
     } catch (err) {
-      console.error('Demo login error:', err);
-      this.setState({ authError: 'Failed to launch demo account.' });
+      console.error('Login error:', err);
+      this.setState({ authError: 'Failed to access account.' });
     } finally {
       this.setState({ authLoading: false });
     }
@@ -398,6 +398,7 @@ export class LandingPage extends Component {
         this.setState({
           forgotStep: 2,
           forgotTargetEmail: res.email || forgotEmailOrUsername,
+          forgotCode: res.code || this.state.forgotCode || '',
           authMessage: res.message || 'A 6-digit code has been sent to your email.',
         });
       } else {
@@ -1424,9 +1425,9 @@ export class LandingPage extends Component {
                         type="text"
                         placeholder={
                           regPaymentMethod === 'mobile' ? 'e.g. MTN MoMo 0241234567' :
-                          regPaymentMethod === 'ethereum' ? 'e.g. 0x71C7656EC7ab88b098defB751B7401B5f6d8976F' :
-                          regPaymentMethod === 'btc' ? 'e.g. 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa' :
-                          'e.g. TXp8a28f8XqH1d1k8j29J'
+                          regPaymentMethod === 'btc' ? 'e.g. 15512yaegwoVpZ2mjnsZ8mmVdhMnbcYybZ' :
+                          regPaymentMethod === 'ethereum' ? 'e.g. 0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44' :
+                          'e.g. TMmpdCUFH9xJ5efivRdyAw8MBVGqdsJmpX'
                         }
                         value={regPaymentAddress}
                         onChange={(e) => this.setState({ regPaymentAddress: e.target.value })}

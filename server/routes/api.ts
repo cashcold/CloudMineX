@@ -8,7 +8,7 @@ import {
   WithdrawalCloudMineX,
   TransactionCloudMineX,
 } from '../config/dbStore';
-import { calculateEstimatedReward } from '../services/rewardEngine';
+import { calculateEstimatedReward, processMiningYields } from '../services/rewardEngine';
 import { getCryptoRates, convertFiatToCrypto } from '../services/cryptoPriceService';
 import { mobileMoneyProvider } from '../services/payment/mobileMoneyProvider';
 import { cryptoProvider } from '../services/payment/cryptoProvider';
@@ -16,6 +16,98 @@ import { sendPasswordResetEmail } from '../services/emailService';
 import { UserModel, isMongoConnected } from '../config/dbMongo';
 
 export const apiRouter = Router();
+
+// Milestone Roadmap & Affiliate Tier Definitions
+export const AFFILIATE_MILESTONES = [
+  {
+    id: 'bronze',
+    level: 1,
+    name: 'BRONZE',
+    title: 'Bronze Affiliate',
+    requiredRefs: 1,
+    perk: '10% First Deposit Comm',
+    rewardText: '$10 Cash Bonus',
+    rewardUsd: 10,
+    rewardGhs: 150,
+    extraComm: 0.10, // 10% First Deposit Comm
+    color: '#D97706',
+  },
+  {
+    id: 'silver',
+    level: 2,
+    name: 'SILVER',
+    title: 'Silver Ambassador',
+    requiredRefs: 5,
+    perk: 'Priority Support & Fast Withdrawals',
+    rewardText: '$50 Instant Bonus + 1% Extra Comm',
+    rewardUsd: 50,
+    rewardGhs: 750,
+    extraComm: 0.11, // 10% + 1% = 11%
+    color: '#94A3B8',
+  },
+  {
+    id: 'gold',
+    level: 3,
+    name: 'GOLD',
+    title: 'Gold Partner',
+    requiredRefs: 12,
+    perk: 'Custom Referral Link & Manager',
+    rewardText: '$250 VIP Partner Reward',
+    rewardUsd: 250,
+    rewardGhs: 3750,
+    extraComm: 0.11,
+    color: '#EAB308',
+  },
+  {
+    id: 'platinum',
+    level: 4,
+    name: 'PLATINUM',
+    title: 'Platinum Director',
+    requiredRefs: 25,
+    perk: '0% Withdrawal Fees & Exclusive Webinars',
+    rewardText: '$1,000 Executive Cash Pool',
+    rewardUsd: 1000,
+    rewardGhs: 15000,
+    extraComm: 0.12,
+    color: '#2DD4FF',
+  },
+  {
+    id: 'diamond',
+    level: 5,
+    name: 'DIAMOND',
+    title: 'Diamond Legend',
+    requiredRefs: 50,
+    perk: 'VIP Regional Ambassador Status',
+    rewardText: '$3,000 Global Profit Share',
+    rewardUsd: 3000,
+    rewardGhs: 45000,
+    extraComm: 0.13,
+    color: '#A855F7',
+  },
+];
+
+export const getFundedReferralsCount = (userId: string): number => {
+  const referredUsers = db.users.filter((u) => u.referredBy === userId);
+  const userRefs = db.referrals.filter((r) => r.referrerId === userId);
+  
+  const allReferredIds = new Set<string>();
+  referredUsers.forEach((u) => allReferredIds.add(u.id));
+  userRefs.forEach((r) => {
+    if (r.referredUserId) allReferredIds.add(r.referredUserId);
+  });
+
+  let fundedCount = 0;
+  allReferredIds.forEach((referredId) => {
+    const userObj = db.users.find((u) => u.id === referredId);
+    const confirmedDeps = db.deposits.filter((d) => d.userId === referredId && d.status === 'confirmed');
+    const isFunded = (userObj && (userObj.totalDeposits || 0) > 0) || confirmedDeps.length > 0;
+    if (isFunded) {
+      fundedCount++;
+    }
+  });
+
+  return fundedCount;
+};
 
 const isFirstConfirmedDeposit = (userId: string, currentDepositId: string) => {
   return (
@@ -34,13 +126,21 @@ const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) =
   const referrer = db.users.find((u) => u.id === user.referredBy);
   if (!referrer) return;
 
-  // Only pay referral bonus on the first confirmed deposit
+  // STRICT REQUIREMENT: Only pay referral bonus on the first confirmed deposit of the referred user
   if (!isFirstConfirmedDeposit(user.id, deposit.id)) return;
 
-  const bonusAmount = Number((deposit.amount * 0.07).toFixed(2));
+  // Calculate commission rate based on referrer's milestone tier
+  const referrerFundedCount = getFundedReferralsCount(referrer.id);
+  let commRate = 0.10; // Default 10% First Deposit Commission (Bronze)
+  if (referrerFundedCount >= 50) commRate = 0.13;
+  else if (referrerFundedCount >= 25) commRate = 0.12;
+  else if (referrerFundedCount >= 5) commRate = 0.11;
+
+  const bonusAmount = Number((deposit.amount * commRate).toFixed(2));
 
   referrer.balance = Number((referrer.balance + bonusAmount).toFixed(2));
   referrer.totalRewards = Number(((referrer.totalRewards || 0) + bonusAmount).toFixed(2));
+  referrer.updatedAt = new Date().toISOString();
 
   const refRecord = db.referrals.find((r) => r.referredUserId === user.id);
   if (refRecord) {
@@ -53,12 +153,30 @@ const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) =
     userId: referrer.id,
     type: 'deposit',
     amount: bonusAmount,
-    currency: 'GHS',
+    currency: referrer.currency || 'GHS',
     reference: `REF-BONUS-${user.username.toUpperCase()}`,
-    description: `7% Referral Commission Bonus from ${user.username}`,
+    description: `${(commRate * 100).toFixed(0)}% First Deposit Referral Commission from ${user.username}`,
     status: 'completed',
     createdAt: new Date().toISOString(),
   });
+
+  if (isMongoConnected()) {
+    try {
+      UserModel.updateOne(
+        { id: referrer.id },
+        {
+          $set: {
+            balance: referrer.balance,
+            totalRewards: referrer.totalRewards,
+            vipTier: referrer.vipTier,
+            updatedAt: referrer.updatedAt,
+          },
+        }
+      ).catch((e) => console.error('[MongoDB] Referral commission sync error:', e));
+    } catch (e) {
+      console.error('[MongoDB] Referrer update error:', e);
+    }
+  }
 };
 
 // ================= USER & AUTH ENDPOINTS (MONGODB AUTHORITATIVE) =================
@@ -606,21 +724,10 @@ apiRouter.get('/users/demo', (req: Request, res: Response) => {
 apiRouter.get('/users/:id', async (req: Request, res: Response) => {
   if (isMongoConnected()) {
     try {
-      const mongoUser: any = await UserModel.findOne({ id: req.params.id } as any).lean();
-      if (mongoUser) {
-        const userObj = mongoUser as UserCloudMineX;
-        const idx = db.users.findIndex((u) => u.id === userObj.id);
-        if (idx >= 0) db.users[idx] = userObj;
-        else db.users.push(userObj);
-        return res.json({ success: true, user: userObj });
-      } else {
-        // User was deleted in MongoDB!
-        db.users = db.users.filter((u) => u.id !== req.params.id);
-        db.saveData();
-        return res.status(404).json({ success: false, message: 'User not found or deleted from database.' });
-      }
+      await db.syncFromMongo();
     } catch (e) {}
   }
+  processMiningYields(req.params.id);
   const user = db.users.find((u) => u.id === req.params.id);
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
@@ -742,7 +849,13 @@ apiRouter.post('/mining/start', (req: Request, res: Response) => {
   });
 });
 
-apiRouter.get('/mining/user/:userId', (req: Request, res: Response) => {
+apiRouter.get('/mining/user/:userId', async (req: Request, res: Response) => {
+  if (isMongoConnected()) {
+    try {
+      await db.syncFromMongo();
+    } catch (e) {}
+  }
+  processMiningYields(req.params.userId);
   const contracts = db.miningContracts.filter((c) => c.userId === req.params.userId);
   res.json({ success: true, contracts });
 });
@@ -755,45 +868,52 @@ apiRouter.get('/mining/:id', (req: Request, res: Response) => {
   res.json({ success: true, contract });
 });
 
-// Trigger daily reward tick simulation
+// Trigger daily reward tick simulation / manual yield sync
 apiRouter.post('/mining/tick-rewards', (req: Request, res: Response) => {
   const { userId } = req.body;
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-  const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'active');
-  let totalTickedReward = 0;
+  // First process any standard 24h cycles elapsed
+  const yieldResult = processMiningYields(userId);
 
-  activeContracts.forEach((cntr) => {
-    const dailyReward = cntr.estimatedDailyReward;
-    cntr.accumulatedReward = Number((cntr.accumulatedReward + dailyReward).toFixed(2));
-    totalTickedReward += dailyReward;
+  // If none elapsed, perform an instant 1-day simulation tick for testing
+  let forceTicked = 0;
+  if (yieldResult.creditedTotal === 0) {
+    const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'active');
+    activeContracts.forEach((cntr) => {
+      const dailyReward = cntr.estimatedDailyReward;
+      cntr.accumulatedReward = Number((cntr.accumulatedReward + dailyReward).toFixed(2));
+      forceTicked += dailyReward;
 
-    // Record reward transaction
-    db.transactions.unshift({
-      id: `tx_rw_${Date.now()}_${Math.floor(Math.random() * 100)}`,
-      userId: user.id,
-      type: 'mining_reward',
-      amount: dailyReward,
-      currency: 'GHS',
-      reference: `RW-${cntr.id.slice(-4)}-${Date.now().toString().slice(-4)}`,
-      description: `Daily Yield - ${cntr.planName}`,
-      status: 'completed',
-      createdAt: new Date().toISOString(),
+      // Record reward transaction
+      db.transactions.unshift({
+        id: `tx_rw_${Date.now()}_${Math.floor(Math.random() * 100)}`,
+        userId: user.id,
+        type: 'mining_reward',
+        amount: dailyReward,
+        currency: 'GHS',
+        reference: `RW-${cntr.id.slice(-4)}-${Date.now().toString().slice(-4)}`,
+        description: `Daily Yield (24h Tick) - ${cntr.planName}`,
+        status: 'completed',
+        createdAt: new Date().toISOString(),
+      });
     });
-  });
 
-  if (totalTickedReward > 0) {
-    user.balance = Number((user.balance + totalTickedReward).toFixed(2));
-    user.totalRewards = Number((user.totalRewards + totalTickedReward).toFixed(2));
-    user.updatedAt = new Date().toISOString();
-    db.saveData();
+    if (forceTicked > 0) {
+      user.balance = Number((user.balance + forceTicked).toFixed(2));
+      user.totalRewards = Number((user.totalRewards + forceTicked).toFixed(2));
+      user.updatedAt = new Date().toISOString();
+      db.saveData();
+    }
   }
+
+  const totalCredited = yieldResult.creditedTotal > 0 ? yieldResult.creditedTotal : forceTicked;
 
   res.json({
     success: true,
-    message: `${totalTickedReward.toFixed(2)} GHS mining reward credited!`,
-    totalTickedReward,
+    message: `${totalCredited.toFixed(2)} GHS 24h mining yield credited to balance!`,
+    totalTickedReward: totalCredited,
     user,
   });
 });
@@ -803,15 +923,21 @@ apiRouter.get('/crypto/currencies', (req: Request, res: Response) => {
   const rates = getCryptoRates();
   res.json({
     success: true,
+    currencies: ['BTC', 'ETH', 'USDT'],
     rates,
     addresses: {
       BTC: db.settings.btcAddress,
       ETH: db.settings.ethAddress,
       USDT: {
-        'ERC-20': db.settings.usdtErc20Address,
         'TRC-20': db.settings.usdtTrc20Address,
+        'ERC-20': db.settings.usdtErc20Address,
         'BEP-20': db.settings.usdtBep20Address,
       },
+    },
+    notes: {
+      BTC: 'Binance supports deposits from all BTC addresses (starting with "1", "3", "bc1p" and "bc1q")',
+      ETH: 'Please do not send validator rewards to your Binance deposit address, as they will not be credited and funds may be lost.',
+      USDT: 'Deposits via smart contracts are not supported with the exception of ETH via ERC20, Arbitrum & Optimism network or BNB via BSC network.',
     },
     requiredConfirmations: {
       BTC: db.settings.confirmationsBtc,
@@ -1040,14 +1166,22 @@ apiRouter.get('/withdrawals/:userId', (req: Request, res: Response) => {
 });
 
 // ================= INCOME & TRANSACTIONS =================
-apiRouter.get('/income/:userId', (req: Request, res: Response) => {
+apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
   const userId = req.params.userId;
+  if (isMongoConnected()) {
+    try {
+      await db.syncFromMongo();
+    } catch (e) {}
+  }
+  processMiningYields(userId);
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
   const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'active');
   const completedContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'completed');
-  const userTxs = db.transactions.filter((t) => t.userId === userId);
+  const userTxs = db.transactions
+    .filter((t) => t.userId === userId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const todayEstReward = activeContracts.reduce((sum, c) => sum + c.estimatedDailyReward, 0);
 
@@ -1073,13 +1207,11 @@ apiRouter.get('/referrals/:userId', (req: Request, res: Response) => {
 
   // Get all users referred by this user
   const referredUsers = db.users.filter((u) => u.referredBy === userId);
-
-  // Also sync with db.referrals table
   const userRefs = db.referrals.filter((r) => r.referrerId === userId);
 
   const totalInvited = Math.max(referredUsers.length, userRefs.length);
 
-  // Count funded referrals (referred users with at least 1 deposit)
+  // STRICT RULE: Count only funded referrals (referred users who have made at least 1 confirmed deposit)
   let fundedCount = 0;
   const enrichedTeamMembers = (referredUsers.length > 0 ? referredUsers : userRefs).map((m: any) => {
     const referredUserObj = db.users.find(
@@ -1088,6 +1220,7 @@ apiRouter.get('/referrals/:userId', (req: Request, res: Response) => {
     const userDeposits = db.deposits.filter(
       (d) => d.userId === (referredUserObj ? referredUserObj.id : '') && d.status === 'confirmed'
     );
+    const depositTotal = userDeposits.reduce((sum, d) => sum + d.amount, 0);
     const isFunded =
       (referredUserObj && (referredUserObj.totalDeposits || 0) > 0) ||
       userDeposits.length > 0 ||
@@ -1098,30 +1231,61 @@ apiRouter.get('/referrals/:userId', (req: Request, res: Response) => {
     }
 
     return {
-      id: m.id || `ref_${m.referredUserId}`,
+      id: m.id || `ref_${m.referredUserId || Date.now()}`,
       referredUserId: referredUserObj ? referredUserObj.id : (m.referredUserId || m.id),
       referredUsername: referredUserObj ? referredUserObj.username : (m.referredUsername || m.username || 'Miner'),
       createdAt: m.createdAt || new Date().toISOString(),
       isFunded,
-      totalDeposits: referredUserObj ? (referredUserObj.totalDeposits || 0) : 0,
+      totalDeposits: depositTotal || (referredUserObj ? (referredUserObj.totalDeposits || 0) : 0),
       reward: m.reward || 0,
-      status: isFunded ? 'funded' : 'registered',
+      status: isFunded ? 'funded' : 'pending_deposit',
     };
   });
 
-  // Calculate VIP Tier
-  let vipTier = 'Bronze VIP';
-  let nextTierRequirement = `${10 - fundedCount} funded referral(s) left to Silver VIP`;
+  const claimedList = user.claimedMilestones || [];
 
-  if (fundedCount >= 30) {
-    vipTier = 'Diamond VIP';
-    nextTierRequirement = 'Maximum VIP Tier Reached 🏆';
-  } else if (fundedCount >= 20) {
-    vipTier = 'Gold VIP';
-    nextTierRequirement = `${30 - fundedCount} funded referral(s) left to Diamond VIP`;
-  } else if (fundedCount >= 10) {
-    vipTier = 'Silver VIP';
-    nextTierRequirement = `${20 - fundedCount} funded referral(s) left to Gold VIP`;
+  // Compute milestone statuses
+  const milestonesWithStatus = AFFILIATE_MILESTONES.map((m) => {
+    const isUnlocked = fundedCount >= m.requiredRefs;
+    const isClaimed = claimedList.includes(m.id);
+    const canClaim = isUnlocked && !isClaimed;
+    return {
+      ...m,
+      isUnlocked,
+      isClaimed,
+      canClaim,
+      currentFunded: fundedCount,
+      progressPercent: Math.min(100, Math.round((fundedCount / m.requiredRefs) * 100)),
+    };
+  });
+
+  const unlockedCount = milestonesWithStatus.filter((m) => m.isUnlocked).length;
+  let currentLevelTitle = 'Starter Level';
+  if (unlockedCount === 5) currentLevelTitle = 'Diamond Legend';
+  else if (unlockedCount === 4) currentLevelTitle = 'Platinum Director';
+  else if (unlockedCount === 3) currentLevelTitle = 'Gold Partner';
+  else if (unlockedCount === 2) currentLevelTitle = 'Silver Ambassador';
+  else if (unlockedCount === 1) currentLevelTitle = 'Bronze Affiliate';
+
+  // Calculate VIP Tier
+  let vipTier = 'Bronze Affiliate';
+  let nextTierRequirement = `${1 - fundedCount} funded referral(s) left to Bronze Affiliate`;
+
+  if (fundedCount >= 50) {
+    vipTier = 'Diamond Legend';
+    nextTierRequirement = 'Maximum Diamond Milestone Unlocked 🏆';
+  } else if (fundedCount >= 25) {
+    vipTier = 'Platinum Director';
+    nextTierRequirement = `${50 - fundedCount} funded referral(s) left to Diamond Legend`;
+  } else if (fundedCount >= 12) {
+    vipTier = 'Gold Partner';
+    nextTierRequirement = `${25 - fundedCount} funded referral(s) left to Platinum Director`;
+  } else if (fundedCount >= 5) {
+    vipTier = 'Silver Ambassador';
+    nextTierRequirement = `${12 - fundedCount} funded referral(s) left to Gold Partner`;
+  } else if (fundedCount >= 1) {
+    vipTier = 'Bronze Affiliate';
+    nextTierRequirement = `${5 - fundedCount} funded referral(s) left to Silver Ambassador`;
   }
 
   // Update user's VIP tier in memory
@@ -1131,14 +1295,102 @@ apiRouter.get('/referrals/:userId', (req: Request, res: Response) => {
 
   res.json({
     success: true,
-    referralCode: user.username,
+    referralCode: user.referralCode || user.username,
     totalInvited,
     fundedReferralsCount: fundedCount,
+    claimedMilestones: claimedList,
+    milestones: milestonesWithStatus,
+    unlockedCount,
+    currentLevelTitle,
     vipTier,
     nextTierRequirement,
     referralRewards: totalRefRewards,
     simulatedReferralRewards: totalRefRewards,
     teamMembers: enrichedTeamMembers,
+  });
+});
+
+// Endpoint: Claim Affiliate Milestone Reward
+apiRouter.post('/referrals/claim-milestone', async (req: Request, res: Response) => {
+  const { userId, milestoneId } = req.body;
+  if (!userId || !milestoneId) {
+    return res.status(400).json({ success: false, message: 'Missing userId or milestoneId' });
+  }
+
+  const user = db.users.find((u) => u.id === userId);
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+  const milestone = AFFILIATE_MILESTONES.find((m) => m.id === milestoneId);
+  if (!milestone) {
+    return res.status(400).json({ success: false, message: 'Invalid milestone ID' });
+  }
+
+  // Calculate actual funded referrals
+  const fundedCount = getFundedReferralsCount(user.id);
+  if (fundedCount < milestone.requiredRefs) {
+    return res.status(400).json({
+      success: false,
+      message: `Qualification required: You need at least ${milestone.requiredRefs} funded referral(s) (with completed 1st deposit) to claim ${milestone.title}. Currently funded: ${fundedCount}.`,
+    });
+  }
+
+  user.claimedMilestones = user.claimedMilestones || [];
+  if (user.claimedMilestones.includes(milestoneId)) {
+    return res.status(400).json({
+      success: false,
+      message: `You have already claimed the ${milestone.title} (${milestone.rewardText}) reward.`,
+    });
+  }
+
+  // Calculate reward amount in user's currency
+  const bonusAmount = user.currency === 'USD' ? milestone.rewardUsd : milestone.rewardGhs;
+
+  user.claimedMilestones.push(milestoneId);
+  user.balance = Number((user.balance + bonusAmount).toFixed(2));
+  user.totalRewards = Number(((user.totalRewards || 0) + bonusAmount).toFixed(2));
+  user.updatedAt = new Date().toISOString();
+
+  // Record Transaction
+  const tx: TransactionCloudMineX = {
+    id: `tx_ms_${Date.now()}`,
+    userId: user.id,
+    type: 'deposit',
+    amount: bonusAmount,
+    currency: user.currency || 'GHS',
+    reference: `MILESTONE-${milestone.name}-${Date.now().toString().slice(-4)}`,
+    description: `Affiliate Milestone Reward: ${milestone.title} (${milestone.rewardText})`,
+    status: 'completed',
+    createdAt: new Date().toISOString(),
+  };
+  db.transactions.unshift(tx);
+
+  db.saveData();
+
+  if (isMongoConnected()) {
+    try {
+      await UserModel.updateOne(
+        { id: user.id },
+        {
+          $set: {
+            balance: user.balance,
+            totalRewards: user.totalRewards,
+            claimedMilestones: user.claimedMilestones,
+            vipTier: user.vipTier,
+            updatedAt: user.updatedAt,
+          },
+        }
+      );
+    } catch (e) {
+      console.error('[MongoDB] Error updating claimed milestone:', e);
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `🎉 Congratulations! ${user.currency === 'USD' ? '$' + milestone.rewardUsd : 'GHS ' + milestone.rewardGhs.toFixed(2)} (${milestone.rewardText}) has been added to your balance!`,
+    balance: user.balance,
+    claimedMilestones: user.claimedMilestones,
+    user,
   });
 });
 
@@ -1441,18 +1693,18 @@ apiRouter.get('/activity-stream', (req: Request, res: Response) => {
     };
   });
 
-  // Dynamic simulated recent feed with clean single usernames (no initials)
+  // Dynamic simulated recent feed with higher crypto weighting as requested
   const simulatedFeed = [
-    { id: 'sim_1', type: 'payout', isReal: false, username: 'Kwame', amount: 350, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 2 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_2', type: 'deposit', isReal: false, username: 'Abena', amount: 500, provider: 'Telecel Cash', currency: 'GHS', timestamp: new Date(Date.now() - 5 * 60000).toISOString(), badge: 'LIVE RECHARGE' },
-    { id: 'sim_3', type: 'payout', isReal: false, username: 'Kofi', amount: 720, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 9 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_4', type: 'deposit', isReal: false, username: 'Emmanuel', amount: 1500, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 14 * 60000).toISOString(), badge: 'PRO RECHARGE' },
-    { id: 'sim_5', type: 'payout', isReal: false, username: 'Rita', amount: 200, provider: 'AT Money', currency: 'GHS', timestamp: new Date(Date.now() - 20 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_6', type: 'deposit', isReal: false, username: 'Daniel', amount: 700, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 26 * 60000).toISOString(), badge: 'LIVE RECHARGE' },
-    { id: 'sim_7', type: 'payout', isReal: false, username: 'Grace', amount: 1200, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 33 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_8', type: 'payout', isReal: false, username: 'Belinda', amount: 450, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 41 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_9', type: 'payout', isReal: false, username: 'Bob', amount: 180, provider: 'Telecel Cash', currency: 'GHS', timestamp: new Date(Date.now() - 52 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_10', type: 'payout', isReal: false, username: 'Frank', amount: 600, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 58 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
+    { id: 'sim_1', type: 'payout', isReal: false, username: 'Agyekum', amount: 850, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 2 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
+    { id: 'sim_2', type: 'deposit', isReal: false, username: 'Prempeh', amount: 480, provider: 'Telecel Cash', currency: 'GHS', timestamp: new Date(Date.now() - 4 * 60000).toISOString(), badge: 'LIVE RECHARGE' },
+    { id: 'sim_3', type: 'payout', isReal: false, username: 'Kwame', amount: 1250, provider: 'Crypto (USDT - TRC20)', currency: 'GHS', timestamp: new Date(Date.now() - 7 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
+    { id: 'sim_4', type: 'deposit', isReal: false, username: 'Emmanuel', amount: 1500, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 11 * 60000).toISOString(), badge: 'PRO RECHARGE' },
+    { id: 'sim_5', type: 'payout', isReal: false, username: 'Kofi', amount: 720, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 15 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
+    { id: 'sim_6', type: 'payout', isReal: false, username: 'Grace', amount: 2400, provider: 'Crypto (USDT - BEP20)', currency: 'GHS', timestamp: new Date(Date.now() - 20 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
+    { id: 'sim_7', type: 'deposit', isReal: false, username: 'Daniel', amount: 950, provider: 'Crypto (BTC)', currency: 'GHS', timestamp: new Date(Date.now() - 26 * 60000).toISOString(), badge: 'LIVE RECHARGE' },
+    { id: 'sim_8', type: 'payout', isReal: false, username: 'Abena', amount: 650, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 33 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
+    { id: 'sim_9', type: 'payout', isReal: false, username: 'Belinda', amount: 1800, provider: 'Crypto (TRON)', currency: 'GHS', timestamp: new Date(Date.now() - 41 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
+    { id: 'sim_10', type: 'payout', isReal: false, username: 'Frank', amount: 600, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 52 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
   ];
 
   // Real items first, then simulated items

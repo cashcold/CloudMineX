@@ -12,13 +12,18 @@ export async function sendPasswordResetEmail(
   username: string,
   otpCode: string
 ): Promise<SendOtpResult> {
-  const host = process.env.SMTP_HOST || 'smtp-relay.brevo.com';
+  const host = (process.env.SMTP_HOST || 'smtp-relay.brevo.com').trim();
   const port = Number(process.env.SMTP_PORT) || 587;
-  const user = process.env.SMTP_USER || 'b66df9001@smtp-brevo.com';
-  const pass = process.env.SMTP_PASS || '';
-  const sender = process.env.SENDER_EMAIL || 'cloudminexsupport@gmail.com';
+  const user = (process.env.SMTP_USER || 'b66df9001@smtp-brevo.com').trim();
+  let pass = (process.env.SMTP_PASS || '').trim();
+  const sender = (process.env.SENDER_EMAIL || 'cloudminexsupport@gmail.com').trim();
 
-  console.log(`[EmailService] Preparing to send 6-digit OTP to ${toEmail} using SMTP host: ${host}:${port}`);
+  // Clean duplicate prefixes in Brevo API/SMTP keys if accidentally duplicated
+  if (pass.startsWith('xsmtpsib-xsmtpsib-')) {
+    pass = pass.replace('xsmtpsib-xsmtpsib-', 'xsmtpsib-');
+  }
+
+  console.log(`[EmailService] Preparing to send 6-digit OTP to ${toEmail} using SMTP host: ${host}:${port}, user: ${user}`);
 
   if (!pass) {
     console.warn('[EmailService] Warning: SMTP_PASS is empty. Email sending might fail unless configured.');

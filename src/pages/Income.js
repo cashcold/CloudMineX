@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
-import { TrendingUp, Wallet, Zap, Cpu, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { TrendingUp, Wallet, Zap, Cpu, ArrowLeft, RefreshCw, AlertCircle, Clock, Calendar, Timer, CheckCircle2 } from 'lucide-react';
 import TransactionList from '../components/TransactionList';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatCurrency, formatDate, formatRemainingTime } from '../utils/formatters';
 import { incomeService, miningService } from '../services/api';
 
 export class Income extends Component {
@@ -46,6 +46,18 @@ export class Income extends Component {
       const res = await miningService.tickRewards(userId);
       if (res.success) {
         this.setState({ message: res.message, isTicking: false });
+
+        if (res.totalTickedReward > 0 && window.triggerJackpotCelebration) {
+          window.triggerJackpotCelebration({
+            type: 'mining_reward',
+            amount: res.totalTickedReward,
+            newBalance: res.user?.balance,
+            title: '24H DAILY YIELD PROFIT!',
+            message: `${res.totalTickedReward.toFixed(2)} GHS 24-hour yield credited directly to your spendable balance!`,
+            currency: res.user?.currency || 'GHS',
+          });
+        }
+
         this.loadIncomeData();
         setTimeout(() => this.setState({ message: '' }), 4000);
       }
@@ -149,33 +161,98 @@ export class Income extends Component {
           </h3>
 
           {incomeData && incomeData.activeContracts.length > 0 ? (
-            <div className="space-y-2">
-              {incomeData.activeContracts.map((cntr) => (
-                <div key={cntr.id} className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-white text-sm">{cntr.planName}</h4>
-                      <p className="text-[11px] text-[#94A3B8]">
-                        Amount: <span className="text-white font-bold">{formatCurrency(cntr.amount, 'GHS')}</span> • Duration: {cntr.duration} Days
-                      </p>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-full bg-[#00D4A8]/10 border border-[#00D4A8]/30 text-[#00D4A8] text-xs font-bold uppercase animate-pulse">
-                      ACTIVE MINING
-                    </span>
-                  </div>
+            <div className="space-y-3">
+              {incomeData.activeContracts.map((cntr) => {
+                const remaining = formatRemainingTime(cntr.endDate);
+                const startMs = new Date(cntr.startDate || cntr.createdAt).getTime();
+                const endMs = new Date(cntr.endDate).getTime();
+                const nowMs = Date.now();
+                const totalDurationMs = Math.max(1, endMs - startMs);
+                const elapsedMs = Math.max(0, Math.min(totalDurationMs, nowMs - startMs));
+                const progressPercent = Math.min(100, Math.max(0, Math.round((elapsedMs / totalDurationMs) * 100)));
 
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Daily Yield</span>
-                      <span className="font-bold text-[#00D4A8]">{formatCurrency(cntr.estimatedDailyReward, 'GHS')} / day</span>
+                return (
+                  <div key={cntr.id} className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-extrabold text-white text-sm tracking-wide flex items-center gap-1.5">
+                          <Zap className="w-3.5 h-3.5 text-[#00D4A8] fill-[#00D4A8]/20" />
+                          <span>{cntr.planName}</span>
+                        </h4>
+                        <p className="text-[11px] text-[#94A3B8] mt-0.5">
+                          Amount: <span className="text-white font-bold">{formatCurrency(cntr.amount, 'GHS')}</span> • Plan Duration: <span className="text-[#00D4A8] font-bold">{cntr.duration} Days</span>
+                        </p>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full bg-[#00D4A8]/10 border border-[#00D4A8]/30 text-[#00D4A8] text-[10px] font-extrabold uppercase tracking-wider animate-pulse shrink-0">
+                        ACTIVE MINING
+                      </span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block">Accumulated Yield</span>
-                      <span className="font-bold text-[#2DD4FF]">{formatCurrency(cntr.accumulatedReward, 'GHS')}</span>
+
+                    {/* Contract Maturity & Timer Banner */}
+                    <div className="bg-[#0D1B2A] p-3 rounded-xl border border-slate-800/80 space-y-2">
+                      <div className="flex items-center justify-between text-xs flex-wrap gap-1">
+                        <div className="flex items-center gap-1.5 text-slate-300">
+                          <Calendar className="w-3.5 h-3.5 text-[#2DD4FF]" />
+                          <span className="text-[11px] text-slate-400">Maturity Date:</span>
+                          <strong className="text-white font-bold text-[11px]">
+                            {formatDate(cntr.endDate)}
+                          </strong>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 bg-[#10253A] px-2.5 py-1 rounded-lg border border-slate-700">
+                          <Timer className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="text-[11px] text-amber-300 font-bold font-mono">
+                            {remaining.text}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Maturity Progress Bar */}
+                      <div className="space-y-1 pt-1">
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                          <span>Mining Progress</span>
+                          <span className="text-[#00D4A8] font-bold font-mono">{progressPercent}% Completed</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] rounded-full transition-all duration-500"
+                            style={{ width: `${progressPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Yields Breakdown & 24h Cycle Info */}
+                    <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-800/80">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Daily Yield (24h)</span>
+                        <span className="font-bold text-[#00D4A8] text-[11px]">
+                          {formatCurrency(cntr.estimatedDailyReward, 'GHS')}
+                        </span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[10px] text-slate-400 block">Total Est. Return</span>
+                        <span className="font-bold text-white text-[11px]">
+                          {formatCurrency(cntr.estimatedTotalReward || (cntr.estimatedDailyReward * cntr.duration), 'GHS')}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block">Credited to Balance</span>
+                        <span className="font-bold text-[#2DD4FF] text-[11px]">
+                          {formatCurrency(cntr.accumulatedReward, 'GHS')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#0A1624] px-3 py-2 rounded-lg border border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-[#00D4A8]" />
+                        <span>Daily yield credits directly to spendable balance every 24 hours until maturity ({cntr.duration} Days).</span>
+                      </span>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="p-6 bg-[#10253A] rounded-2xl border border-slate-800 text-center">

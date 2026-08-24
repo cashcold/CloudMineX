@@ -12,6 +12,7 @@ import Profile from './pages/Profile';
 import AdminDashboard from './pages/AdminDashboard';
 import CommunityChat from './pages/CommunityChat';
 import LandingPage from './pages/LandingPage';
+import JackpotCelebrationModal from './components/JackpotCelebrationModal';
 import { userService } from './services/api';
 
 export class App extends Component {
@@ -21,10 +22,17 @@ export class App extends Component {
       showLanding: true,
       activeTab: 'home',
       user: null,
+      celebration: null, // { type, amount, newBalance, title, message }
     };
+    this.pollInterval = null;
+    this.lastKnownBalance = null;
+    this.lastKnownRewards = null;
+    this.lastKnownDeposits = null;
+
     this.handleNavigate = this.handleNavigate.bind(this);
     this.handleLoginSuccess = this.handleLoginSuccess.bind(this);
     this.handleToggleLanding = this.handleToggleLanding.bind(this);
+    this.triggerJackpotCelebration = this.triggerJackpotCelebration.bind(this);
   }
 
   componentDidMount() {
@@ -33,11 +41,39 @@ export class App extends Component {
     this.loadStoredUser();
     window.addEventListener('popstate', this.checkAdminUrl);
     window.addEventListener('hashchange', this.checkAdminUrl);
+
+    // Register global trigger for jackpot celebration
+    window.triggerJackpotCelebration = this.triggerJackpotCelebration;
+
+    // Periodic check for 24h yields & deposits (every 8 seconds)
+    this.pollInterval = setInterval(() => {
+      if (this.state.user && !this.state.showLanding) {
+        this.loadUser(true);
+      }
+    }, 8000);
   }
 
   componentWillUnmount() {
     window.removeEventListener('popstate', this.checkAdminUrl);
     window.removeEventListener('hashchange', this.checkAdminUrl);
+    if (this.pollInterval) clearInterval(this.pollInterval);
+    if (window.triggerJackpotCelebration === this.triggerJackpotCelebration) {
+      delete window.triggerJackpotCelebration;
+    }
+  }
+
+  triggerJackpotCelebration(details = {}) {
+    if (!details || (!details.amount && details.amount !== 0)) return;
+    this.setState({
+      celebration: {
+        type: details.type || 'mining_reward',
+        amount: Number(details.amount) || 0,
+        newBalance: details.newBalance !== undefined ? details.newBalance : (this.state.user ? this.state.user.balance : 0),
+        title: details.title,
+        message: details.message,
+        currency: details.currency || (this.state.user ? this.state.user.currency : 'GHS'),
+      },
+    });
   }
 
   checkAdminUrl() {
@@ -72,6 +108,9 @@ export class App extends Component {
       if (storedUserId) {
         const res = await userService.getUser(storedUserId);
         if (res && res.user) {
+          this.lastKnownBalance = res.user.balance;
+          this.lastKnownRewards = res.user.totalRewards || 0;
+          this.lastKnownDeposits = res.user.totalDeposits || 0;
           this.setState({ 
             user: res.user, 
             showLanding: isAdmin ? false : false,
@@ -96,22 +135,60 @@ export class App extends Component {
     }
   }
 
-  async loadUser() {
+  async loadUser(silent = false, allowCelebration = true) {
     const { user } = this.state;
     if (!user) return;
     try {
       const res = await userService.getUser(user.id);
       if (res && res.user) {
-        this.setState({ user: res.user });
+        const newUser = res.user;
+        const prevBal = this.lastKnownBalance !== null ? this.lastKnownBalance : user.balance;
+        const prevRewards = this.lastKnownRewards !== null ? this.lastKnownRewards : (user.totalRewards || 0);
+        const prevDeposits = this.lastKnownDeposits !== null ? this.lastKnownDeposits : (user.totalDeposits || 0);
+
+        if (allowCelebration && prevBal !== null && newUser.balance > prevBal) {
+          const diff = Number((newUser.balance - prevBal).toFixed(2));
+          let creditType = 'deposit';
+          let title = 'DEPOSIT CONFIRMED!';
+          let msg = 'Funds have been credited to your spendable balance!';
+
+          if ((newUser.totalRewards || 0) > prevRewards) {
+            creditType = 'mining_reward';
+            title = '24H DAILY YIELD PROFIT!';
+            msg = 'Automated cloud mining profit credited to your spendable balance!';
+          } else if ((newUser.totalDeposits || 0) > prevDeposits) {
+            creditType = 'deposit';
+            title = 'DEPOSIT CONFIRMED!';
+            msg = 'Your deposit has been confirmed and added to your balance!';
+          }
+
+          this.triggerJackpotCelebration({
+            type: creditType,
+            amount: diff,
+            newBalance: newUser.balance,
+            title,
+            message: msg,
+            currency: newUser.currency || 'GHS',
+          });
+        }
+
+        this.lastKnownBalance = newUser.balance;
+        this.lastKnownRewards = newUser.totalRewards || 0;
+        this.lastKnownDeposits = newUser.totalDeposits || 0;
+
+        this.setState({ user: newUser });
       }
     } catch (err) {
-      console.error('Error refreshing user:', err);
+      if (!silent) console.error('Error refreshing user:', err);
     }
   }
 
   handleLoginSuccess(loggedInUser) {
     if (loggedInUser && loggedInUser.id) {
       localStorage.setItem('cloudminex_user_id', loggedInUser.id);
+      this.lastKnownBalance = loggedInUser.balance;
+      this.lastKnownRewards = loggedInUser.totalRewards || 0;
+      this.lastKnownDeposits = loggedInUser.totalDeposits || 0;
     }
     this.setState({
       user: loggedInUser,
@@ -155,7 +232,7 @@ export class App extends Component {
       case 'withdraw':
         return <Withdraw user={user} onNavigate={this.handleNavigate} onRefreshUser={() => this.loadUser()} />;
       case 'team':
-        return <Team user={user} onNavigate={this.handleNavigate} />;
+        return <Team user={user} onNavigate={this.handleNavigate} onRefreshUser={() => this.loadUser()} />;
       case 'share':
         return <Share user={user} onNavigate={this.handleNavigate} />;
       case 'profile':
@@ -170,13 +247,26 @@ export class App extends Component {
   }
 
   render() {
-    const { showLanding, activeTab, user } = this.state;
+    const { showLanding, activeTab, user, celebration } = this.state;
 
     if (showLanding) {
       return (
-        <LandingPage 
-          onLoginSuccess={this.handleLoginSuccess}
-        />
+        <>
+          <LandingPage 
+            onLoginSuccess={this.handleLoginSuccess}
+          />
+          {celebration && (
+            <JackpotCelebrationModal
+              type={celebration.type}
+              amount={celebration.amount}
+              newBalance={celebration.newBalance}
+              title={celebration.title}
+              message={celebration.message}
+              currency={celebration.currency}
+              onClose={() => this.setState({ celebration: null })}
+            />
+          )}
+        </>
       );
     }
 
@@ -208,6 +298,19 @@ export class App extends Component {
             <BottomNavigation activeTab={activeTab} onTabChange={this.handleNavigate} />
           </div>
         </div>
+
+        {/* Global Jackpot Victory Celebration Modal */}
+        {celebration && (
+          <JackpotCelebrationModal
+            type={celebration.type}
+            amount={celebration.amount}
+            newBalance={celebration.newBalance}
+            title={celebration.title}
+            message={celebration.message}
+            currency={celebration.currency}
+            onClose={() => this.setState({ celebration: null })}
+          />
+        )}
       </div>
     );
   }

@@ -18,7 +18,14 @@ export class TransactionList extends Component {
     const { transactions = [] } = this.props;
     const { filter } = this.state;
 
-    const filtered = transactions.filter((tx) => {
+    // Sort transactions by date descending (greater/newest date at top, older going down)
+    const sortedTransactions = [...transactions].sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime();
+      const timeB = new Date(b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    const filtered = sortedTransactions.filter((tx) => {
       if (filter === 'ALL') return true;
       if (filter === 'MINING') return tx.type === 'mining_reward' || tx.type === 'mining_purchase';
       if (filter === 'DEPOSIT') return tx.type === 'deposit';

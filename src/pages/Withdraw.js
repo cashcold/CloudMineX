@@ -71,7 +71,7 @@ export class Withdraw extends Component {
     this.setState({ isSubmitting: true, errorMessage: '', successMessage: '' });
 
     try {
-      const res = await withdrawalService.submitDemoWithdrawal(user.id, amount, destination, provider);
+      const res = await withdrawalService.submitWithdrawal(user.id, amount, destination, provider);
       if (res.success) {
         this.setState({
           user: res.user,
@@ -237,11 +237,11 @@ export class Withdraw extends Component {
 
         {/* Withdrawal History */}
         <div className="space-y-3 pt-3">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Demo Withdrawal History</h3>
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Withdrawal History</h3>
 
           {withdrawals.length === 0 ? (
             <div className="p-6 bg-[#10253A] rounded-2xl border border-slate-800 text-center">
-              <p className="text-xs text-slate-400">No demo withdrawal records submitted yet.</p>
+              <p className="text-xs text-slate-400">No withdrawal records submitted yet.</p>
             </div>
           ) : (
             <div className="space-y-2">

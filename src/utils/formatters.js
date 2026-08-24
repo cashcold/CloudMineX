@@ -23,3 +23,29 @@ export function formatDate(dateString) {
     minute: '2-digit',
   });
 }
+
+export function formatRemainingTime(endDateString) {
+  if (!endDateString) return { text: 'N/A', days: 0, hours: 0, minutes: 0, isExpired: true };
+  const end = new Date(endDateString).getTime();
+  const now = Date.now();
+  const diff = end - now;
+
+  if (diff <= 0) {
+    return { text: 'Matured / Completed', days: 0, hours: 0, minutes: 0, isExpired: true };
+  }
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+  let text = '';
+  if (days > 0) {
+    text = `${days}d ${hours}h left`;
+  } else if (hours > 0) {
+    text = `${hours}h ${minutes}m left`;
+  } else {
+    text = `${Math.max(1, minutes)}m left`;
+  }
+
+  return { text, days, hours, minutes, isExpired: false };
+}

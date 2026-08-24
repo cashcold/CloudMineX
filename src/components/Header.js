@@ -1,6 +1,6 @@
 import React, { Component } from 'react';
 import { Bell, ShieldCheck, Cloud } from 'lucide-react';
-import DemoModeBadge from './DemoModeBadge';
+import LiveMiningBadge from './LiveMiningBadge';
 
 export class Header extends Component {
   render() {
@@ -27,7 +27,7 @@ export class Header extends Component {
         {/* Right Header Actions */}
         <div id="header-actions" className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           <div className="hidden lg:flex">
-            <DemoModeBadge />
+            <LiveMiningBadge />
           </div>
 
           {/* Landing Page Shortcut */}

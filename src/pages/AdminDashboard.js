@@ -348,6 +348,16 @@ export class AdminDashboard extends Component {
                                 const res = await adminService.approveDeposit(dep.id);
                                 if (res.success) {
                                   this.setState({ message: `Approved! Credited GHS ${dep.amount} to user account.`, isSubmitting: false });
+
+                                  if (window.triggerJackpotCelebration) {
+                                    window.triggerJackpotCelebration({
+                                      type: 'deposit',
+                                      amount: dep.amount,
+                                      title: 'ADMIN DEPOSIT APPROVED!',
+                                      message: `GHS ${dep.amount.toFixed(2)} deposit approved and credited to user balance!`,
+                                    });
+                                  }
+
                                   this.loadAdminStats();
                                 }
                               } catch (err) {
@@ -465,6 +475,16 @@ export class AdminDashboard extends Component {
                     });
                     if (res.success) {
                       this.setState({ message: res.message, creditAmount: '', isSubmitting: false });
+
+                      if (Number(creditAmount) > 0 && window.triggerJackpotCelebration) {
+                        window.triggerJackpotCelebration({
+                          type: 'deposit',
+                          amount: Number(creditAmount),
+                          title: 'BALANCE CREDITED!',
+                          message: `GHS ${Number(creditAmount).toFixed(2)} credited to balance!`,
+                        });
+                      }
+
                       this.loadAdminStats();
                     }
                   } catch (err) {

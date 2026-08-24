@@ -104,6 +104,18 @@ export class Home extends Component {
           successMessage: res.message,
           isTicking: false,
         });
+
+        if (res.totalTickedReward > 0 && window.triggerJackpotCelebration) {
+          window.triggerJackpotCelebration({
+            type: 'mining_reward',
+            amount: res.totalTickedReward,
+            newBalance: res.user?.balance,
+            title: '24H DAILY YIELD PROFIT!',
+            message: `${res.totalTickedReward.toFixed(2)} GHS 24-hour yield credited directly to your spendable balance!`,
+            currency: res.user?.currency || 'GHS',
+          });
+        }
+
         setTimeout(() => this.setState({ successMessage: '' }), 4000);
       }
     } catch (err) {

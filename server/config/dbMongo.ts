@@ -27,6 +27,7 @@ const userSchema = new Schema<UserCloudMineX>({
   referredBy: { type: String },
   vipLevel: { type: Number },
   vipTier: { type: String },
+  claimedMilestones: { type: [String], default: [] },
   totalRewards: { type: Number, default: 0 },
   activeContracts: { type: Number, default: 0 },
   createdAt: { type: String },

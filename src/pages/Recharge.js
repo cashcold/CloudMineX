@@ -13,8 +13,8 @@ export class Recharge extends Component {
       momoProvider: 'Vodafone Cash',
       momoAmount: 100,
       customMomoAmount: '',
-      cryptoCurrency: 'USDT', // BTC, ETH, USDT
-      cryptoNetwork: 'TRC-20', // ERC-20, TRC-20, BEP-20
+      cryptoCurrency: 'BTC', // BTC (first), ETH, USDT
+      cryptoNetwork: 'Bitcoin', // Bitcoin, ERC-20, TRC-20, BEP-20
       cryptoAmountFiat: 300,
       cryptoInfo: null,
       momoPaymentResult: null,
@@ -120,7 +120,7 @@ export class Recharge extends Component {
   async handleSimulateDepositConfirmation(depositId) {
     this.setState({ isSubmitting: true });
     try {
-      const res = await depositService.confirmDemoDeposit(depositId);
+      const res = await depositService.confirmDeposit(depositId);
       if (res.success) {
         this.setState({
           user: res.user,
@@ -129,6 +129,19 @@ export class Recharge extends Component {
           cryptoPaymentResult: null,
           isSubmitting: false,
         });
+
+        // Trigger Jackpot Victory celebration immediately
+        if (window.triggerJackpotCelebration) {
+          window.triggerJackpotCelebration({
+            type: 'deposit',
+            amount: res.deposit?.amount || 0,
+            newBalance: res.user?.balance,
+            title: 'DEPOSIT CONFIRMED!',
+            message: `GHS ${(res.deposit?.amount || 0).toFixed(2)} added directly to your spendable balance!`,
+            currency: res.user?.currency || 'GHS',
+          });
+        }
+
         if (this.props.onRefreshUser) {
           this.props.onRefreshUser();
         }
@@ -426,33 +439,46 @@ export class Recharge extends Component {
             <div className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-4">
               <div>
                 <label className="text-xs font-semibold text-[#94A3B8] uppercase block mb-2">
-                  Select Cryptocurrency
+                  Select Cryptocurrency (BTC / ETH / USDT)
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {['BTC', 'ETH', 'USDT'].map((curr) => (
+                  {[
+                    { symbol: 'BTC', label: 'Bitcoin (BTC)', defaultNet: 'Bitcoin' },
+                    { symbol: 'ETH', label: 'Ethereum (ETH)', defaultNet: 'ERC-20' },
+                    { symbol: 'USDT', label: 'Tether (USDT)', defaultNet: 'TRC-20' },
+                  ].map((item) => (
                     <button
-                      key={curr}
-                      onClick={() => this.setState({ cryptoCurrency: curr, cryptoPaymentResult: null })}
-                      className={`p-3 rounded-xl border text-center text-xs font-bold transition-all ${
-                        cryptoCurrency === curr
+                      key={item.symbol}
+                      onClick={() =>
+                        this.setState({
+                          cryptoCurrency: item.symbol,
+                          cryptoNetwork: item.defaultNet,
+                          cryptoPaymentResult: null,
+                        })
+                      }
+                      className={`p-3 rounded-xl border text-center transition-all ${
+                        cryptoCurrency === item.symbol
                           ? 'bg-[#00D4A8]/20 border-[#00D4A8] text-[#00D4A8]'
                           : 'bg-[#0D1B2A] border-slate-800 text-slate-300 hover:border-slate-700'
                       }`}
                     >
-                      {curr}
+                      <span className="block text-sm font-extrabold">{item.symbol}</span>
+                      <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
+                        {item.symbol === 'BTC' ? 'Bitcoin' : item.symbol === 'ETH' ? 'ERC-20' : 'TRC / ERC'}
+                      </span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* USDT Network Selector */}
-              {cryptoCurrency === 'USDT' && (
+              {/* Network Selector */}
+              {cryptoCurrency === 'USDT' ? (
                 <div>
                   <label className="text-xs font-semibold text-[#94A3B8] uppercase block mb-2">
-                    Select Network
+                    Select USDT Network
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    {['ERC-20', 'TRC-20', 'BEP-20'].map((net) => (
+                    {['TRC-20', 'ERC-20', 'BEP-20'].map((net) => (
                       <button
                         key={net}
                         onClick={() => this.setState({ cryptoNetwork: net, cryptoPaymentResult: null })}
@@ -466,6 +492,13 @@ export class Recharge extends Component {
                       </button>
                     ))}
                   </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-[#0D1B2A] rounded-xl border border-slate-800 flex items-center justify-between">
+                  <span className="text-xs text-slate-400">Selected Blockchain Network</span>
+                  <span className="text-xs font-bold text-[#2DD4FF] px-2.5 py-1 bg-[#2DD4FF]/10 rounded-lg border border-[#2DD4FF]/30">
+                    {cryptoCurrency === 'BTC' ? 'Bitcoin (BTC Mainnet)' : 'Ethereum (ERC-20 Mainnet)'}
+                  </span>
                 </div>
               )}
 
@@ -482,108 +515,153 @@ export class Recharge extends Component {
                 />
               </div>
 
+              {/* Coin specific instruction note before generating */}
+              <div className="p-3 bg-[#07111F] rounded-xl border border-slate-800 text-xs text-slate-400 leading-relaxed">
+                {cryptoCurrency === 'BTC' && (
+                  <p className="text-amber-300/90">
+                    💡 <strong>BTC Deposit Note:</strong> Binance supports deposits from all BTC addresses (starting with &quot;1&quot;, &quot;3&quot;, &quot;bc1p&quot; and &quot;bc1q&quot;).
+                  </p>
+                )}
+                {cryptoCurrency === 'ETH' && (
+                  <p className="text-amber-300/90">
+                    💡 <strong>ETH Deposit Note:</strong> Please do not send validator rewards to your Binance deposit address, as they will not be credited and funds may be lost.
+                  </p>
+                )}
+                {cryptoCurrency === 'USDT' && (
+                  <p className="text-amber-300/90">
+                    💡 <strong>USDT Deposit Note:</strong> Deposits via smart contracts are not supported with the exception of ETH via ERC20, Arbitrum & Optimism network or BNB via BSC network.
+                  </p>
+                )}
+              </div>
+
               {!cryptoPaymentResult && (
                 <button
                   onClick={() => this.handleCreateCryptoDeposit()}
                   disabled={isSubmitting}
                   className="w-full py-3 bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-bold text-xs uppercase rounded-xl shadow-lg hover:brightness-110 active:scale-95 transition-all"
                 >
-                  {isSubmitting ? 'Generating Address...' : 'GENERATE DEPOSIT ADDRESS & QR'}
+                  {isSubmitting ? 'Generating Address...' : `GENERATE ${cryptoCurrency} DEPOSIT ADDRESS & QR`}
                 </button>
               )}
             </div>
 
-                {/* Generated Crypto Deposit Display */}
-                {cryptoPaymentResult && (
-                  <div className="bg-[#10253A] p-5 rounded-2xl border border-[#00D4A8]/40 space-y-4">
-                    <div className="text-center pb-2 border-b border-slate-800">
-                      <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">STATUS: WAITING FOR DEPOSIT</span>
-                      <h3 className="text-xl font-extrabold text-white mt-1">
-                        {cryptoPaymentResult.paymentDetails.cryptoAmount} {cryptoCurrency}
-                      </h3>
-                      <p className="text-xs text-slate-400">
-                        Binance Network: <span className="text-[#2DD4FF] font-bold">{cryptoNetwork}</span>
-                      </p>
-                    </div>
+            {/* Generated Crypto Deposit Display */}
+            {cryptoPaymentResult && (() => {
+              const depositAddr =
+                cryptoPaymentResult.depositAddress ||
+                cryptoPaymentResult.paymentDetails?.depositAddress ||
+                cryptoPaymentResult.deposit?.address ||
+                (cryptoCurrency === 'BTC'
+                  ? '15512yaegwoVpZ2mjnsZ8mmVdhMnbcYybZ'
+                  : cryptoCurrency === 'ETH'
+                  ? '0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44'
+                  : cryptoNetwork === 'TRC-20'
+                  ? 'TMmpdCUFH9xJ5efivRdyAw8MBVGqdsJmpX'
+                  : '0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44');
 
-                    {/* Deposit Address Box */}
-                    <div className="bg-[#0D1B2A] p-4 rounded-xl border border-slate-800 space-y-2">
-                      <p className="text-xs text-slate-300 font-bold uppercase tracking-wider">
-                        {cryptoCurrency} Deposit Address ({cryptoNetwork})
-                      </p>
-                      <div className="flex items-center justify-between gap-2 p-2.5 bg-[#07111F] rounded-lg border border-slate-800">
-                        <p className="text-xs sm:text-sm font-mono text-[#00D4A8] font-bold break-all">
-                          {cryptoCurrency === 'USDT'
-                            ? 'TX9Z2s213xS9281a8c9831920zmsa'
-                            : cryptoCurrency === 'BTC'
-                            ? '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa'
-                            : '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'}
-                        </p>
-                        <button
-                          onClick={() =>
-                            this.handleCopy(
-                              cryptoCurrency === 'USDT'
-                                ? 'TX9Z2s213xS9281a8c9831920zmsa'
-                                : cryptoCurrency === 'BTC'
-                                ? '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa'
-                                : '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
-                              'cryptoAddr'
-                            )
-                          }
-                          className="p-2 rounded-lg bg-[#00D4A8]/20 text-[#00D4A8] hover:bg-[#00D4A8]/30 shrink-0 font-bold text-xs flex items-center gap-1"
-                        >
-                          {copiedField === 'cryptoAddr' ? (
-                            <>
-                              <Check className="w-4 h-4 text-[#00D4A8]" />
-                              <span>Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4" />
-                              <span>Copy</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs leading-relaxed">
-                      <strong>IMPORTANT:</strong> Send ONLY {cryptoCurrency} using the selected network ({cryptoNetwork}). Sending through another network may result in permanent asset loss.
-                    </div>
-
-                    <div className="p-3 bg-[#00D4A8]/10 border border-[#00D4A8]/30 rounded-xl text-[#00D4A8] text-xs leading-relaxed flex items-start gap-2">
-                      <Zap className="w-4 h-4 shrink-0 mt-0.5 fill-[#00D4A8]" />
-                      <span>
-                        <strong>⚡ 24/7 Automated Blockchain Scanner:</strong> Once your transfer is broadcast on the {cryptoNetwork} network, click below to automatically scan the blockchain and credit your account immediately.
-                      </span>
-                    </div>
-
-                    {/* Instant Crypto Deposit Confirmation Button */}
-                    <button
-                      onClick={() => this.handleSimulateDepositConfirmation(cryptoPaymentResult.deposit.id)}
-                      disabled={isSubmitting}
-                      className="w-full py-3.5 bg-gradient-to-r from-[#00D4A8] via-[#2DD4FF] to-[#00D4A8] text-[#07111F] font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Zap className="w-4 h-4 fill-[#07111F]" />
-                      <span>INSTANT BLOCKCHAIN CONFIRM & CREDIT (24/7 AUTOMATED)</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        this.setState({
-                          successMessage: `Crypto deposit request (${cryptoPaymentResult.paymentDetails.cryptoAmount} ${cryptoCurrency}) submitted for Admin review. Balance will be updated upon verification.`,
-                          cryptoPaymentResult: null,
-                        });
-                        if (this.props.onRefreshUser) this.props.onRefreshUser();
-                      }}
-                      disabled={isSubmitting}
-                      className="w-full py-2.5 bg-[#0D1B2A] border border-slate-700 text-slate-300 font-bold text-xs uppercase rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
-                    >
-                      <ShieldAlert className="w-4 h-4 text-amber-400" />
-                      <span>Submit TxHash for Admin Review</span>
-                    </button>
+              return (
+                <div className="bg-[#10253A] p-5 rounded-2xl border border-[#00D4A8]/40 space-y-4">
+                  <div className="text-center pb-2 border-b border-slate-800">
+                    <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                      STATUS: WAITING FOR DEPOSIT
+                    </span>
+                    <h3 className="text-xl font-extrabold text-white mt-1">
+                      {cryptoPaymentResult.paymentDetails?.cryptoAmount || cryptoPaymentResult.cryptoAmount} {cryptoCurrency}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Network: <span className="text-[#2DD4FF] font-bold">{cryptoNetwork}</span>
+                    </p>
                   </div>
-                )}
+
+                  {/* QR Code */}
+                  <div className="flex justify-center my-2">
+                    <div className="p-3 bg-white rounded-2xl shadow-xl">
+                      <QRCodeDisplay value={depositAddr} size={150} />
+                    </div>
+                  </div>
+
+                  {/* Deposit Address Box */}
+                  <div className="bg-[#0D1B2A] p-4 rounded-xl border border-slate-800 space-y-2">
+                    <p className="text-xs text-slate-300 font-bold uppercase tracking-wider flex items-center justify-between">
+                      <span>{cryptoCurrency} Deposit Address</span>
+                      <span className="text-[#2DD4FF] text-[10px] font-mono">{cryptoNetwork}</span>
+                    </p>
+                    <div className="flex items-center justify-between gap-2 p-2.5 bg-[#07111F] rounded-lg border border-slate-800">
+                      <p className="text-xs sm:text-sm font-mono text-[#00D4A8] font-bold break-all">
+                        {depositAddr}
+                      </p>
+                      <button
+                        onClick={() => this.handleCopy(depositAddr, 'cryptoAddr')}
+                        className="p-2 rounded-lg bg-[#00D4A8]/20 text-[#00D4A8] hover:bg-[#00D4A8]/30 shrink-0 font-bold text-xs flex items-center gap-1"
+                      >
+                        {copiedField === 'cryptoAddr' ? (
+                          <>
+                            <Check className="w-4 h-4 text-[#00D4A8]" />
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Coin Specific Warning / Rules */}
+                  {cryptoCurrency === 'BTC' && (
+                    <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-200 text-xs leading-relaxed">
+                      <strong>BTC Network Info:</strong> Binance supports deposits from all BTC addresses (starting with &quot;1&quot;, &quot;3&quot;, &quot;bc1p&quot; and &quot;bc1q&quot;).
+                    </div>
+                  )}
+
+                  {cryptoCurrency === 'ETH' && (
+                    <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-200 text-xs leading-relaxed">
+                      <strong>ETH Warning:</strong> Please do not send validator rewards to your Binance deposit address, as they will not be credited and funds may be lost.
+                    </div>
+                  )}
+
+                  {cryptoCurrency === 'USDT' && (
+                    <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-200 text-xs leading-relaxed">
+                      <strong>USDT Contract Rules:</strong> Deposits via smart contracts are not supported with the exception of ETH via ERC20, Arbitrum & Optimism network or BNB via BSC network.
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-[#00D4A8]/10 border border-[#00D4A8]/30 rounded-xl text-[#00D4A8] text-xs leading-relaxed flex items-start gap-2">
+                    <Zap className="w-4 h-4 shrink-0 mt-0.5 fill-[#00D4A8]" />
+                    <span>
+                      <strong>⚡ 24/7 Automated Blockchain Scanner:</strong> Once your transfer is broadcast on the {cryptoNetwork} network, click below to automatically scan the blockchain and credit your account immediately.
+                    </span>
+                  </div>
+
+                  {/* Instant Crypto Deposit Confirmation Button */}
+                  <button
+                    onClick={() => this.handleSimulateDepositConfirmation(cryptoPaymentResult.deposit?.id || cryptoPaymentResult.id)}
+                    disabled={isSubmitting}
+                    className="w-full py-3.5 bg-gradient-to-r from-[#00D4A8] via-[#2DD4FF] to-[#00D4A8] text-[#07111F] font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Zap className="w-4 h-4 fill-[#07111F]" />
+                    <span>INSTANT BLOCKCHAIN CONFIRM & CREDIT (24/7 AUTOMATED)</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      this.setState({
+                        successMessage: `Crypto deposit request (${cryptoPaymentResult.paymentDetails?.cryptoAmount || cryptoPaymentResult.cryptoAmount || ''} ${cryptoCurrency}) submitted for Admin review. Balance will be updated upon verification.`,
+                        cryptoPaymentResult: null,
+                      });
+                      if (this.props.onRefreshUser) this.props.onRefreshUser();
+                    }}
+                    disabled={isSubmitting}
+                    className="w-full py-2.5 bg-[#0D1B2A] border border-slate-700 text-slate-300 font-bold text-xs uppercase rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                  >
+                    <ShieldAlert className="w-4 h-4 text-amber-400" />
+                    <span>Submit TxHash for Admin Review</span>
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
