@@ -12,11 +12,22 @@ export class Income extends Component {
       isLoading: true,
       isTicking: false,
       message: '',
+      currentTime: Date.now(),
     };
+    this.timerInterval = null;
   }
 
   componentDidMount() {
     this.loadIncomeData();
+    this.timerInterval = setInterval(() => {
+      this.setState({ currentTime: Date.now() });
+    }, 1000);
+  }
+
+  componentWillUnmount() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+    }
   }
 
   componentDidUpdate(prevProps) {
@@ -166,13 +177,41 @@ export class Income extends Component {
                 const remaining = formatRemainingTime(cntr.endDate);
                 const startMs = new Date(cntr.startDate || cntr.createdAt).getTime();
                 const endMs = new Date(cntr.endDate).getTime();
-                const nowMs = Date.now();
+                const nowMs = this.state.currentTime || Date.now();
                 const totalDurationMs = Math.max(1, endMs - startMs);
                 const elapsedMs = Math.max(0, Math.min(totalDurationMs, nowMs - startMs));
                 const progressPercent = Math.min(100, Math.max(0, Math.round((elapsedMs / totalDurationMs) * 100)));
 
+                // 24h Cycle and Next Credit Calculations
+                const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+                const maxDays = cntr.duration || 14;
+                const dailyReward = cntr.estimatedDailyReward || Number((cntr.amount * (cntr.rewardRate || 0.06)).toFixed(2));
+                const alreadyCreditedDays = Math.min(maxDays, Math.floor(((cntr.accumulatedReward || 0) + 0.0001) / (dailyReward || 1)));
+                const isCompleted = alreadyCreditedDays >= maxDays || nowMs >= endMs;
+                const nextCycleNumber = Math.min(maxDays, alreadyCreditedDays + 1);
+                const nextCreditTimeMs = startMs + nextCycleNumber * ONE_DAY_MS;
+                const nextCreditFormattedDate = formatDate(new Date(nextCreditTimeMs).toISOString());
+                const diffNextMs = nextCreditTimeMs - nowMs;
+
+                let nextCreditCountdownText = '';
+                if (diffNextMs <= 0) {
+                  nextCreditCountdownText = 'Due now (Syncing...)';
+                } else {
+                  const daysLeft = Math.floor(diffNextMs / (1000 * 60 * 60 * 24));
+                  const hoursLeft = Math.floor((diffNextMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                  const minsLeft = Math.floor((diffNextMs % (1000 * 60 * 60)) / (1000 * 60));
+                  const secsLeft = Math.floor((diffNextMs % (1000 * 60)) / 1000);
+                  if (daysLeft > 0) {
+                    nextCreditCountdownText = `${daysLeft}d ${hoursLeft}h left`;
+                  } else if (hoursLeft > 0) {
+                    nextCreditCountdownText = `${hoursLeft}h ${minsLeft}m left`;
+                  } else {
+                    nextCreditCountdownText = `${minsLeft}m ${secsLeft}s left`;
+                  }
+                }
+
                 return (
-                  <div key={cntr.id} className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
+                  <div key={cntr.id} className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-3.5 shadow-md">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h4 className="font-extrabold text-white text-sm tracking-wide flex items-center gap-1.5">
@@ -222,24 +261,89 @@ export class Income extends Component {
                       </div>
                     </div>
 
+                    {/* Next 24h Daily Yield Payout Schedule Card */}
+                    <div className="bg-[#0A1624] p-3 rounded-xl border border-[#00D4A8]/30 space-y-2.5">
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-[#00D4A8]">
+                          <Clock className="w-3.5 h-3.5 text-[#00D4A8]" />
+                          <span className="uppercase tracking-wider">Next 24h Daily Yield Payout</span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-[#00D4A8]/10 text-[#00D4A8] text-[10px] font-bold border border-[#00D4A8]/20">
+                          {isCompleted ? 'Completed' : `Cycle Day ${nextCycleNumber} of ${maxDays}`}
+                        </span>
+                      </div>
+
+                      {!isCompleted ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-[#10253A] p-2.5 rounded-lg border border-slate-800">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Exact Credit Date & Time:</span>
+                            <strong className="text-white font-bold text-xs flex items-center gap-1 mt-0.5">
+                              <Calendar className="w-3 h-3 text-[#2DD4FF]" />
+                              {nextCreditFormattedDate}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Time Until Next Credit:</span>
+                            <strong className="text-amber-300 font-bold font-mono text-xs flex items-center gap-1 mt-0.5">
+                              <Timer className="w-3 h-3 text-amber-400" />
+                              {nextCreditCountdownText}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Next Payout Amount:</span>
+                            <strong className="text-[#00D4A8] font-bold text-xs flex items-center gap-1 mt-0.5">
+                              <Zap className="w-3 h-3 fill-[#00D4A8]" />
+                              +{formatCurrency(dailyReward, 'GHS')}
+                            </strong>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-2 bg-[#10253A] rounded-lg border border-slate-800 text-center">
+                          <span className="text-xs text-[#00D4A8] font-bold flex items-center justify-center gap-1">
+                            <CheckCircle2 className="w-4 h-4" /> All {maxDays} daily yield cycles ({formatCurrency(dailyReward * maxDays, 'GHS')}) credited!
+                          </span>
+                        </div>
+                      )}
+
+                      <p className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#00D4A8] shrink-0"></span>
+                        <span>
+                          {isCompleted
+                            ? `Contract has completed full ${maxDays}-day duration.`
+                            : `You will be credited with +${formatCurrency(dailyReward, 'GHS')} on ${nextCreditFormattedDate} (in ${nextCreditCountdownText}).`}
+                        </span>
+                      </p>
+                    </div>
+
                     {/* Yields Breakdown & 24h Cycle Info */}
                     <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-800/80">
                       <div>
                         <span className="text-[10px] text-slate-400 block">Daily Yield (24h)</span>
-                        <span className="font-bold text-[#00D4A8] text-[11px]">
-                          {formatCurrency(cntr.estimatedDailyReward, 'GHS')}
+                        <span className="font-bold text-[#00D4A8] text-[11px] block">
+                          {formatCurrency(dailyReward, 'GHS')}
                         </span>
+                        {!isCompleted && (
+                          <span className="text-[9px] text-[#00D4A8] font-medium block">
+                            Next in {nextCreditCountdownText}
+                          </span>
+                        )}
                       </div>
                       <div className="text-center">
                         <span className="text-[10px] text-slate-400 block">Total Est. Return</span>
-                        <span className="font-bold text-white text-[11px]">
-                          {formatCurrency(cntr.estimatedTotalReward || (cntr.estimatedDailyReward * cntr.duration), 'GHS')}
+                        <span className="font-bold text-white text-[11px] block">
+                          {formatCurrency(cntr.estimatedTotalReward || (dailyReward * cntr.duration), 'GHS')}
+                        </span>
+                        <span className="text-[9px] text-slate-400 block">
+                          {maxDays} Days Full Cycle
                         </span>
                       </div>
                       <div className="text-right">
                         <span className="text-[10px] text-slate-400 block">Credited to Balance</span>
-                        <span className="font-bold text-[#2DD4FF] text-[11px]">
+                        <span className="font-bold text-[#2DD4FF] text-[11px] block">
                           {formatCurrency(cntr.accumulatedReward, 'GHS')}
+                        </span>
+                        <span className="text-[9px] text-[#2DD4FF] font-medium block">
+                          {alreadyCreditedDays}/{maxDays} Payouts Done
                         </span>
                       </div>
                     </div>
