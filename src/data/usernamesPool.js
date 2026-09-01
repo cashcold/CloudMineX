@@ -1,4 +1,4 @@
-export const USERNAMES_POOL = [
+export const FIRST_NAMES = [
   'Kwame', 'Abena', 'Kofi', 'Emmanuel', 'Rita', 'Daniel', 'Grace', 'Belinda', 'Bob', 'Frank',
   'Mercy', 'Yaw', 'Samuel', 'Evelyn', 'Prince', 'Patricia', 'Cynthia', 'Derrick', 'Linda', 'Joseph',
   'Adu', 'Mensah', 'Richmond', 'Vida', 'Eric', 'Faustina', 'Gideon', 'Harriet', 'Isaac', 'Joyce',
@@ -12,59 +12,80 @@ export const USERNAMES_POOL = [
   'Benjamin', 'Clara', 'Dennis', 'Esther', 'Felix', 'Gloria', 'Harrison', 'Isabel', 'Jacob', 'Leonard',
   'Monica', 'Nathan', 'Philip', 'Ruth', 'Timothy', 'Veronica', 'Arthur', 'Brenda', 'Caleb', 'Doris',
   'Eugene', 'Fiona', 'Gregory', 'Helen', 'Julia', 'Luke', 'Martha', 'Noah', 'Pamela', 'Raymond',
-  'Sarah', 'Alice', 'Brian', 'Charlotte', 'Eleanor', 'Fred', 'Hugh', 'Iris', 'John', 'Kate',
-  'Louis', 'Margaret', 'Norman', 'Olivia', 'Rose', 'Sam', 'Tracy', 'Alan', 'Barbara', 'Carl',
-  'Dorothy', 'Faye', 'Gerald', 'Hazel', 'Ian', 'Jean', 'Keith', 'Laura', 'Mark', 'Nina',
-  'Oscar', 'Pearl', 'Ralph', 'Sylvia', 'Terry', 'Vera', 'Wayne', 'Adam', 'Betty', 'Colin',
-  'Edgar', 'Flora', 'Gary', 'Hilda', 'Jack', 'Kelly', 'Leo', 'Megan', 'Neil', 'Paula',
-  'Roy', 'Sheila', 'Troy', 'Valerie', 'Ann', 'Carol', 'Dave', 'Eva', 'Gail', 'Harry',
-  'Ida', 'Jim', 'Kim', 'Lee', 'Mona', 'Nick', 'Pam', 'Ron', 'Sue', 'Tom',
-  'Vic', 'Wendy', 'Ben', 'Amy', 'Dan', 'Joy', 'Ken', 'Leah', 'Max', 'Mia',
-  'Zoe', 'Adwoa', 'Kwaku', 'Kwadwo', 'Kwabena', 'Kweku', 'Kobina', 'Akosua', 'Akua', 'Yaa',
-  'Afua', 'Afia', 'Ama', 'Aboagye', 'Agyapong', 'Amoah', 'Appiah', 'Asante', 'Asare', 'Baah',
-  'Boadu', 'Boateng', 'Dankwa', 'Frimpong', 'Gyamfi', 'Kwarteng', 'Ofori', 'Owusu', 'Sarpong', 'Yeboah',
-  'Acheampong', 'Adomako', 'Agyemang', 'Allotey', 'Amankwah', 'Annan', 'Anokye', 'Ansah', 'Antwi', 'Arhin',
-  'Arthur', 'Asamoah', 'Atta', 'Badu', 'Baffoe', 'Boakye', 'Bonsu', 'Darko', 'Donkor', 'Egyir',
-  'Eshun', 'Forson', 'Gaisie', 'Kyei', 'Lamptey', 'Lartey', 'Nartey', 'Ntim', 'Nyarko', 'Ocloo',
-  'Okyere', 'Oppong', 'Quaye', 'Quaye', 'Sackey', 'Tetteh', 'Turkson', 'Agyei', 'Amponsah', 'Andoh',
-  'Ankomah', 'Appenteng', 'Asare', 'Asiedu', 'Avoke', 'Ayew', 'Bediako', 'Boahin', 'Doku', 'Duah',
-  'Dzifa', 'Fosu', 'Hayford', 'Issah', 'Kessie', 'Koranteng', 'Kumah', 'Kumi', 'Kyei', 'Mintah',
-  'Nkrumah', 'Ntumy', 'Nyanor', 'Obeng', 'Ocloo', 'Okyere', 'Osafo', 'Oteng', 'Otoo', 'Quansah',
-  'Quartey', 'Tackie', 'Takyi', 'Tettehfio', 'Yankey', 'Abayie', 'Abrokwa', 'Acheampon', 'Agyekum', 'Agyepong',
-  'Akorli', 'Akrong', 'Akurugu', 'Alhassan', 'Amedi', 'Ametefe', 'Amewu', 'Amlado', 'Amoako', 'Anane',
-  'Anim', 'Annan', 'Appiahene', 'Arkaah', 'Armah', 'Asah', 'Asiamah', 'Asirifi', 'Asonaba', 'Asubonteng',
-  'Atakora', 'Attakora', 'Avortri', 'Awuah', 'Ayisi', 'Azinlo', 'Baa', 'Baffour', 'Baidoo', 'Bampoe',
-  'Banning', 'Bimpong', 'Boadi', 'Boahen', 'Boakye', 'Boama', 'Boasiako', 'Bortey', 'Brobbey', 'Chinery',
-  'Dapaah', 'Dartey', 'Debrah', 'Djan', 'Doku', 'Donkor', 'Dwamena', 'Dziwornu', 'Edzie', 'Fiagbe',
-  'Fianko', 'Fobi', 'Gyamfua', 'Gyan', 'Gyang', 'Incoom', 'Kanda', 'Kessie', 'Koomson', 'Kusi',
-  'Kwakye', 'Kwapong', 'Kyeremeh', 'Kyerewaa', 'Laryea', 'Marfo', 'Mireku', 'Morgan', 'Nanfuri', 'Nduom',
-  'Nketia', 'Nkrabea', 'Nsiah', 'Nsor', 'Ntekim', 'Ntim', 'Ntow', 'Nukpenu', 'Nyamekye', 'Nyaning',
-  'Nyarko', 'Nzeh', 'Obiri', 'Odamtten', 'Odartey', 'Osei', 'Osnufi', 'Otu', 'Otuo', 'Owusuaa',
-  'Pobi', 'Poku', 'Prempeh', 'Sackeyfio', 'Siaw', 'Sarpong', 'Segbefia', 'Sefa', 'Sekyi', 'Sewa',
-  'Sowah', 'Tagoe', 'Takyiewaa', 'Tandoh', 'Tawiah', 'Tenkorang', 'Tweku', 'Wiafe', 'Yankson', 'Yeeboah',
-  'Yirenkyi', 'Zuta', 'Aaron', 'Abigail', 'Abraham', 'Adam', 'Adrian', 'Agnes', 'Albert', 'Alfred',
-  'Alice', 'Amanda', 'Amelia', 'Andrew', 'Angela', 'Ann', 'Anthony', 'Audrey', 'Austin', 'Barbara',
-  'Beatrice', 'Benjamin', 'Bernard', 'Beth', 'Beverly', 'Billy', 'Bradley', 'Brandon', 'Brenda', 'Brian',
-  'Bruce', 'Bryan', 'Calvin', 'Carl', 'Carol', 'Caroline', 'Catherine', 'Charles', 'Charlotte', 'Cheryl',
-  'Christian', 'Christina', 'Christine', 'Christopher', 'Clara', 'Clarence', 'Claude', 'Clifford', 'Clyde', 'Cody',
-  'Colin', 'Connie', 'Craig', 'Curtis', 'Cynthia', 'Dale', 'Daniel', 'Danny', 'Darlene', 'David',
-  'Deborah', 'Debra', 'Denise', 'Dennis', 'Derek', 'Diana', 'Diane', 'Donald', 'Donna', 'Doris',
-  'Dorothy', 'Douglas', 'Dustin', 'Earl', 'Eddie', 'Edgar', 'Edith', 'Edward', 'Edwin', 'Elaine',
-  'Eleanor', 'Elizabeth', 'Ella', 'Ellen', 'Emily', 'Emma', 'Eric', 'Ernest', 'Eugene', 'Eva',
-  'Evelyn', 'Florence', 'Frances', 'Francis', 'Frank', 'Fred', 'Freda', 'Gabriel', 'Gail', 'Gary',
-  'George', 'Gerald', 'Gertrude', 'Gilbert', 'Gladys', 'Glen', 'Gloria', 'Grace', 'Gregory', 'Harold',
-  'Harry', 'Hazel', 'Helen', 'Henry', 'Herbert', 'Howard', 'Hugh', 'Ian', 'Irene', 'Isaac',
-  'Jack', 'Jacob', 'Jacqueline', 'James', 'Jane', 'Janet', 'Janice', 'Jean', 'Jeanne', 'Jeffrey',
-  'Jennifer', 'Jerry', 'Jesse', 'Jessica', 'Jill', 'Joan', 'Joe', 'Joel', 'John', 'Johnny',
-  'Jonathan', 'Joseph', 'Josephine', 'Joshua', 'Joyce', 'Judith', 'Julia', 'Julian', 'Julie', 'Justin',
-  'Karen', 'Katherine', 'Kathleen', 'Kathryn', 'Kenneth', 'Kevin', 'Kimberly', 'Larry', 'Laura', 'Lawrence',
-  'Leo', 'Leonard', 'Lillian', 'Linda', 'Lisa', 'Lois', 'Lori', 'Louis', 'Louise', 'Lucille',
-  'Lydia', 'Margaret', 'Maria', 'Marian', 'Marie', 'Marilyn', 'Marion', 'Mark', 'Martha', 'Martin',
-  'Mary', 'Matthew', 'Michael', 'Mildred', 'Nancy', 'Nathan', 'Nicholas', 'Norman', 'Pamela', 'Patricia',
-  'Patrick', 'Paul', 'Paula', 'Peter', 'Philip', 'Phyllis', 'Rachel', 'Ralph', 'Raymond', 'Rebecca',
-  'Richard', 'Robert', 'Robin', 'Roger', 'Ronald', 'Rosa', 'Rose', 'Roy', 'Ruby', 'Russell',
-  'Ruth', 'Sam', 'Samuel', 'Sandra', 'Sara', 'Sarah', 'Scott', 'Sean', 'Sharon', 'Shirley',
-  'Stanley', 'Stella', 'Stephen', 'Steven', 'Susan', 'Teresa', 'Terry', 'Theresa', 'Thomas', 'Timothy',
-  'Tom', 'Tracy', 'Victor', 'Victoria', 'Vincent', 'Virginia', 'Walter', 'Wayne', 'Wendy', 'William',
-  'Willie', 'Zachary', 'Zoe'
+  'Sarah', 'Brian', 'Charlotte', 'John', 'Kate', 'Louis', 'Margaret', 'Olivia', 'Sam', 'Tracy',
+  'Gerald', 'Mark', 'Oscar', 'Ralph', 'Wayne', 'Adam', 'Gary', 'Jack', 'Kelly', 'Leo',
+  'Megan', 'Neil', 'Paula', 'Roy', 'Harry', 'Dan', 'Ken', 'Max', 'Mia', 'Zoe',
+  'Adwoa', 'Kwaku', 'Kwadwo', 'Kwabena', 'Kweku', 'Kobina', 'Akosua', 'Akua', 'Yaa', 'Afua',
+  'Afia', 'Ama', 'Nana', 'Kojo', 'Baah', 'Boadu', 'Boateng', 'Frimpong', 'Gyamfi', 'Ofori',
+  'Owusu', 'Sarpong', 'Yeboah', 'Acheampong', 'Adomako', 'Agyemang', 'Allotey', 'Amankwah', 'Annan',
+  'Ansah', 'Antwi', 'Arhin', 'Asamoah', 'Atta', 'Badu', 'Baffoe', 'Boakye', 'Bonsu', 'Darko',
+  'Donkor', 'Egyir', 'Eshun', 'Forson', 'Gaisie', 'Kyei', 'Lamptey', 'Lartey', 'Nartey', 'Ntim',
+  'Nyarko', 'Ocloo', 'Okyere', 'Oppong', 'Quaye', 'Sackey', 'Tetteh', 'Turkson', 'Amponsah', 'Andoh',
+  'Appenteng', 'Asiedu', 'Ayew', 'Bediako', 'Boahin', 'Doku', 'Duah', 'Fosu', 'Hayford', 'Issah',
+  'Koomson', 'Kusi', 'Marfo', 'Mireku', 'Morgan', 'Nanfuri', 'Nduom', 'Nketia', 'Nsiah', 'Obiri',
+  'Poku', 'Prempeh', 'Siaw', 'Sefa', 'Sekyi', 'Sowah', 'Tagoe', 'Tandoh', 'Tawiah', 'Wiafe', 'Yankson'
 ];
+
+export const SURNAMES = [
+  'Agyekum', 'Mensah', 'Boateng', 'Osei', 'Appiah', 'Owusu', 'Frimpong', 'Asante', 'Kwarteng',
+  'Yeboah', 'Acheampong', 'Boakye', 'Sarpong', 'Darko', 'Oppong', 'Adom', 'Amankwah', 'Gyamfi',
+  'Donkor', 'Bonsu', 'Tetteh', 'Lamptey', 'Quaye', 'Lartey', 'Sackey', 'Annan', 'Antwi', 'Kyei',
+  'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis', 'Wilson', 'Anderson', 'Taylor',
+  'Thomas', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez',
+  'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young', 'Allen', 'King', 'Wright', 'Scott'
+];
+
+export const PHONE_PREFIXES = ['024', '054', '055', '059', '020', '050', '027', '057', '026'];
+
+// Combined Pool for legacy compatibility
+export const USERNAMES_POOL = FIRST_NAMES;
+
+const recentNamesMemory = [];
+const MAX_RECENT_HISTORY = 40;
+
+/**
+ * Generates a unique, non-repeating username or masked identity
+ */
+export function getUniqueDynamicName() {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const styleChoice = Math.random();
+    let candidate = '';
+
+    if (styleChoice < 0.35) {
+      // Style 1: First Name + Initial (e.g. Kwame A., Belinda M.)
+      const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+      const initial = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+      candidate = `${first} ${initial}.`;
+    } else if (styleChoice < 0.65) {
+      // Style 2: First Name + Surname (e.g. Kofi Mensah, Daniel Boateng)
+      const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+      const last = SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
+      candidate = `${first} ${last}`;
+    } else if (styleChoice < 0.85) {
+      // Style 3: Username handle with digits or tags (e.g. Emmanuel_92, Alex_Crypto, Nana_88)
+      const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+      const suffix = Math.random() > 0.4 
+        ? Math.floor(10 + Math.random() * 90) 
+        : ['Pro', 'Miner', 'Hash', 'Crypto', 'VIP', 'Gold'][Math.floor(Math.random() * 6)];
+      candidate = `${first}_${suffix}`;
+    } else {
+      // Style 4: Masked Phone identity (e.g. 024****918, 055****342)
+      const prefix = PHONE_PREFIXES[Math.floor(Math.random() * PHONE_PREFIXES.length)];
+      const last3 = Math.floor(100 + Math.random() * 900);
+      candidate = `${prefix}****${last3}`;
+    }
+
+    if (!recentNamesMemory.includes(candidate)) {
+      recentNamesMemory.push(candidate);
+      if (recentNamesMemory.length > MAX_RECENT_HISTORY) {
+        recentNamesMemory.shift();
+      }
+      return candidate;
+    }
+  }
+
+  // Fallback guaranteed unique with random entropy
+  const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+  const num = Math.floor(100 + Math.random() * 900);
+  return `${first}_${num}`;
+}

@@ -3,19 +3,19 @@ import { Calendar, ShieldCheck, Lock } from 'lucide-react';
 
 const Statistics = () => {
   const [runningDays, setRunningDays] = useState(() => {
-    const LAUNCH_DATE = new Date('2026-08-02T00:00:00Z').getTime();
+    const LAUNCH_DATE = new Date('2026-09-01T00:00:00Z').getTime();
     const now = Date.now();
-    return Math.max(2, Math.floor((now - LAUNCH_DATE) / (1000 * 60 * 60 * 24)));
+    return Math.max(1, Math.floor((now - LAUNCH_DATE) / (1000 * 60 * 60 * 24)) + 1);
   });
 
   useEffect(() => {
-    const LAUNCH_DATE = new Date('2026-08-02T00:00:00Z').getTime();
+    const LAUNCH_DATE = new Date('2026-09-01T00:00:00Z').getTime();
     const nextDay = LAUNCH_DATE + Math.ceil((Date.now() - LAUNCH_DATE) / (1000 * 60 * 60 * 24)) * (1000 * 60 * 60 * 24);
 
     const timeout = setTimeout(() => {
       const now = Date.now();
-      setRunningDays(Math.max(2, Math.floor((now - LAUNCH_DATE) / (1000 * 60 * 60 * 24))));
-    }, nextDay - Date.now());
+      setRunningDays(Math.max(1, Math.floor((now - LAUNCH_DATE) / (1000 * 60 * 60 * 24)) + 1));
+    }, Math.max(1000, nextDay - Date.now()));
 
     return () => clearTimeout(timeout);
   }, [runningDays]);
@@ -35,7 +35,7 @@ const Statistics = () => {
             </div>
 
             <h3 className="mt-3 text-lg font-black text-white">Platform Launch Date</h3>
-            <p className="mt-1 text-xl font-bold text-[#00D4A8]">Aug 2, 2026</p>
+            <p className="mt-1 text-xl font-bold text-[#00D4A8]">Sept 1, 2026</p>
             <p className="mt-1 text-sm text-slate-300">(Running Days {runningDays})</p>
 
             <div className="mt-3 flex items-center gap-2 text-sm text-slate-300">

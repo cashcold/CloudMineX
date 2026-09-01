@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { Send, MessageSquare, ShieldCheck, ArrowLeft, CheckCircle2, Zap } from 'lucide-react';
 import { chatService, userService } from '../services/api';
+import { getUniqueDynamicName } from '../data/usernamesPool';
 
 const cleanName = (raw) => {
   if (!raw) return 'User';
@@ -58,26 +59,30 @@ export class CommunityChat extends Component {
   }
 
   injectRandomClaim() {
-    const claimsPool = [
-      { username: 'Kwame', text: 'MoMo payout of GHS 420.00 confirmed in 2 mins! CloudMineX is fast 🔥', badge: 'Verified Payout', type: 'payout' },
-      { username: 'Abena', text: 'Recharged GHS 300 via Telecel Cash and unlocked Basic Miner rig! Daily GHS 18 yield 🚀', badge: 'Active Miner', type: 'deposit' },
-      { username: 'Kofi', text: 'My GHS 50 Welcome bonus unlocked right after I made my first deposit! Best platform in Ghana', badge: 'VIP Member', type: 'payout' },
-      { username: 'Emmanuel', text: 'Just received GHS 1,470 total yield from my Pro Miner plan! Instant MoMo payout!', badge: 'Verified Payout', type: 'payout' },
-      { username: 'Grace', text: 'Deposited 50 USDT (TRC-20) and credited in 1 block confirmation! Very reliable', badge: 'Crypto Miner', type: 'deposit' },
-      { username: 'Belinda', text: 'GHS 250 withdrawal received directly to my MTN MoMo wallet! Thanks admin!', badge: 'Verified Payout', type: 'payout' },
-      { username: 'Bob', text: 'I deposited GHS 100 and withdrew GHS 150 total (welcome bonus + yield) same day!', badge: 'Verified Payout', type: 'payout' },
-      { username: 'Rita', text: 'Recharged GHS 700! Earned GHS 49 daily yield today!', badge: 'Pro Miner', type: 'deposit' },
-      { username: 'Daniel', text: 'GHS 820 MoMo payout alert just hit my phone! CloudMineX is 100% real 🔥', badge: 'Verified Payout', type: 'payout' },
+    const randomUsername = getUniqueDynamicName();
+    const momoAmounts = [180, 260, 350, 420, 560, 680, 750, 890, 1150, 1420, 1850, 2400];
+    const usdtAmounts = [30, 50, 75, 100, 150, 200, 300, 500];
+    const momoAmt = momoAmounts[Math.floor(Math.random() * momoAmounts.length)];
+    const usdtAmt = usdtAmounts[Math.floor(Math.random() * usdtAmounts.length)];
+
+    const messageTemplates = [
+      { text: `MoMo payout of GHS ${momoAmt}.00 confirmed instantly! CloudMineX is fast 🔥`, badge: 'Verified Payout', type: 'payout' },
+      { text: `Recharged GHS ${momoAmt}.00 via MoMo and activated my cloud hash rig! 🚀`, badge: 'Active Miner', type: 'deposit' },
+      { text: `Just received GHS ${momoAmt}.00 daily yield payout directly to wallet!`, badge: 'Verified Payout', type: 'payout' },
+      { text: `Deposited ${usdtAmt} USDT (TRC-20) and credited in 1 block confirmation! Very fast`, badge: 'Crypto Miner', type: 'deposit' },
+      { text: `Withdrew GHS ${momoAmt}.00 to my MTN MoMo wallet! Thanks admin!`, badge: 'Verified Payout', type: 'payout' },
+      { text: `Withdrew ${usdtAmt} USDT to Binance successfully! Instant transaction.`, badge: 'Verified Payout', type: 'payout' },
+      { text: `GHS ${momoAmt}.00 withdrawal alert just hit my phone! 100% real 🔥`, badge: 'Verified Payout', type: 'payout' },
+      { text: `Recharged GHS ${momoAmt}.00! Daily yield starts ticking right away`, badge: 'Pro Miner', type: 'deposit' },
     ];
 
-    const randomClaim = claimsPool[Math.floor(Math.random() * claimsPool.length)];
-    const cleanUsername = randomClaim.username.replace(/_/g, ' ');
+    const randomTemplate = messageTemplates[Math.floor(Math.random() * messageTemplates.length)];
     const newMsg = {
-      id: `chat_sim_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      username: cleanUsername,
-      text: randomClaim.text,
-      badge: randomClaim.badge,
-      type: randomClaim.type,
+      id: `chat_sim_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      username: randomUsername,
+      text: randomTemplate.text,
+      badge: randomTemplate.badge,
+      type: randomTemplate.type,
       createdAt: new Date().toISOString(),
     };
 

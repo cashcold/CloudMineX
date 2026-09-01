@@ -1,18 +1,12 @@
 import React, { Component } from 'react';
-import { TrendingUp, ArrowDownLeft, ArrowUpRight, ShieldCheck, Zap } from 'lucide-react';
+import { TrendingUp, ArrowDownLeft, ArrowUpRight, ShieldCheck, Zap, X } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
 import { activityService } from '../services/api';
-import { USERNAMES_POOL } from '../data/usernamesPool';
-
-const cleanName = (raw) => {
-  if (!raw) return 'User';
-  return raw.trim().split(' ')[0].split('_')[0];
-};
+import { getUniqueDynamicName } from '../data/usernamesPool';
 
 export class LiveActivityStream extends Component {
   constructor(props) {
     super(props);
-    // Check if user dismissed popout in the current page session
     const isDismissed = typeof window !== 'undefined' && Boolean(window.__cloudminexPopoutDismissed);
     this.state = {
       activities: [],
@@ -23,14 +17,15 @@ export class LiveActivityStream extends Component {
     this.timer = null;
     this.simulationTimer = null;
     this.toastTimer = null;
+    this.shownToastIds = new Set();
   }
 
   componentDidMount() {
     this.fetchStream();
-    // Generate a realistic live transaction every 5 seconds
-    this.simulationTimer = setInterval(() => this.generateLiveTransaction(), 5000);
-    // Poll backend every 15 seconds to sync real withdrawals/deposits
-    this.timer = setInterval(() => this.fetchStream(), 15000);
+    // Generate organic, realistic live transactions every 7 seconds
+    this.simulationTimer = setInterval(() => this.generateLiveTransaction(), 7000);
+    // Poll backend every 20 seconds to sync real withdrawals/deposits
+    this.timer = setInterval(() => this.fetchStream(), 20000);
   }
 
   componentWillUnmount() {
@@ -40,12 +35,7 @@ export class LiveActivityStream extends Component {
   }
 
   generateLiveTransaction() {
-    const namesPool = USERNAMES_POOL && USERNAMES_POOL.length > 0 ? USERNAMES_POOL : [
-      'Agyekum', 'Prempeh', 'Kwame', 'Abena', 'Kofi', 'Emmanuel', 'Rita', 'Daniel', 'Grace', 'Belinda', 'Bob', 'Frank'
-    ];
-    // High representation of Crypto as requested
     const providersPool = [
-      'Crypto (USDT)',
       'Crypto (USDT - TRC20)',
       'Crypto (USDT - BEP20)',
       'Crypto (USDT)',
@@ -55,17 +45,21 @@ export class LiveActivityStream extends Component {
       'Telecel Cash',
       'AT Money',
     ];
-    const amountsPool = [250, 350, 480, 500, 650, 720, 850, 1000, 1200, 1500, 1850, 2200, 3100, 4500];
-    const typesPool = ['payout', 'payout', 'deposit', 'payout', 'payout', 'deposit'];
 
-    const randomRawName = namesPool[Math.floor(Math.random() * namesPool.length)];
-    const randomName = cleanName(randomRawName);
+    const amountsPool = [
+      180, 250, 320, 450, 580, 720, 850, 1000, 1250, 1500, 1850, 2200, 3100, 4500, 5800
+    ];
+    
+    // High ratio of payouts (75% payouts, 25% deposits)
+    const typesPool = ['payout', 'payout', 'payout', 'deposit'];
+
+    const randomName = getUniqueDynamicName();
     const randomProvider = providersPool[Math.floor(Math.random() * providersPool.length)];
     const randomAmount = amountsPool[Math.floor(Math.random() * amountsPool.length)];
     const randomType = typesPool[Math.floor(Math.random() * typesPool.length)];
 
     const newAct = {
-      id: `gen_tx_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      id: `gen_tx_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
       type: randomType,
       isReal: false,
       username: randomName,
@@ -77,7 +71,7 @@ export class LiveActivityStream extends Component {
     };
 
     this.setState((prevState) => {
-      const updated = [newAct, ...prevState.activities].slice(0, 12);
+      const updated = [newAct, ...prevState.activities].slice(0, 15);
       return { activities: updated };
     });
 
@@ -92,11 +86,11 @@ export class LiveActivityStream extends Component {
       if (res.success && res.activities) {
         this.setState({ activities: res.activities });
 
-        // Pick a top activity for floating toast notification if not dismissed
+        // Trigger toast for a fresh un-shown item if not dismissed
         if (!this.state.isDismissed && !(typeof window !== 'undefined' && window.__cloudminexPopoutDismissed)) {
-          if (res.activities.length > 0) {
-            const randomIndex = Math.floor(Math.random() * Math.min(3, res.activities.length));
-            const toastItem = res.activities[randomIndex];
+          const unshown = res.activities.filter((act) => !this.shownToastIds.has(act.id));
+          if (unshown.length > 0) {
+            const toastItem = unshown[0];
             this.triggerToast(toastItem);
           }
         }
@@ -107,9 +101,16 @@ export class LiveActivityStream extends Component {
   }
 
   triggerToast(item) {
-    if (this.state.isDismissed || (typeof window !== 'undefined' && window.__cloudminexPopoutDismissed)) {
+    if (!item || this.state.isDismissed || (typeof window !== 'undefined' && window.__cloudminexPopoutDismissed)) {
       return;
     }
+    this.shownToastIds.add(item.id);
+    if (this.shownToastIds.size > 50) {
+      // Keep set bounded
+      const firstKey = this.shownToastIds.values().next().value;
+      this.shownToastIds.delete(firstKey);
+    }
+
     this.setState({ recentToast: item, toastVisible: true });
     if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => {
@@ -147,11 +148,11 @@ export class LiveActivityStream extends Component {
         </div>
 
         {/* Ticker List */}
-        <div className="bg-[#10253A] rounded-xl border border-slate-800 p-2.5 max-h-48 overflow-y-auto space-y-1.5 scrollbar-thin">
+        <div className="bg-[#10253A] rounded-xl border border-slate-800 p-2.5 max-h-52 overflow-y-auto space-y-1.5 scrollbar-thin">
           {activities.length === 0 ? (
             <div className="text-center py-4 text-xs text-slate-500">Connecting to CloudMineX live transaction feed...</div>
           ) : (
-            activities.slice(0, 8).map((act) => {
+            activities.slice(0, 10).map((act) => {
               const isDeposit = act.type === 'deposit';
               return (
                 <div
@@ -172,8 +173,8 @@ export class LiveActivityStream extends Component {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-white truncate max-w-[110px]">
-                          {cleanName(act.username)}
+                        <span className="font-bold text-white truncate max-w-[130px]">
+                          {act.username}
                         </span>
                         {act.isReal ? (
                           <span className="text-[8px] font-black px-1.5 py-0.2 rounded bg-[#00D4A8] text-[#07111F] uppercase tracking-tighter">
@@ -204,27 +205,30 @@ export class LiveActivityStream extends Component {
 
         {/* Floating Toast Popup */}
         {toastVisible && recentToast && !isDismissed && (
-          <div className="fixed bottom-20 right-4 z-50 max-w-xs bg-[#0D1B2A] border border-[#00D4A8] rounded-xl p-3 shadow-2xl shadow-[#00D4A8]/20 animate-fade-in flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00D4A8] to-[#2DD4FF] flex items-center justify-center text-[#07111F] font-bold shrink-0">
+          <div className="fixed bottom-20 right-4 z-50 max-w-xs sm:max-w-sm bg-[#0D1B2A] border border-[#00D4A8]/60 rounded-xl p-3 shadow-2xl shadow-[#00D4A8]/20 animate-fade-in flex items-center gap-3 backdrop-blur-md">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#00D4A8] to-[#2DD4FF] flex items-center justify-center text-[#07111F] font-bold shrink-0 shadow-sm">
               <Zap className="w-4 h-4 fill-[#07111F]" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] font-extrabold text-[#00D4A8] uppercase tracking-wider">
-                  {recentToast.type === 'deposit' ? '🟢 RECHARGE ALERT' : '🔵 PAYOUT CONFIRMED'}
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[9px] font-extrabold text-[#00D4A8] uppercase tracking-wider flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00D4A8] animate-pulse"></span>
+                  {recentToast.type === 'deposit' ? 'Recharge Confirmed' : 'Payout Confirmed'}
                 </span>
                 <button
                   onClick={() => this.handleDismissToast()}
-                  className="text-slate-400 hover:text-white text-xs px-1 py-0.5 rounded hover:bg-slate-800 transition-colors"
-                  title="Close alert"
+                  className="text-slate-400 hover:text-white text-xs p-1 rounded hover:bg-slate-800 transition-colors"
+                  title="Close popup"
                 >
-                  ✕
+                  <X className="w-3 h-3" />
                 </button>
               </div>
               <p className="text-xs font-bold text-white truncate mt-0.5">
-                {cleanName(recentToast.username)} {recentToast.type === 'deposit' ? 'recharged' : 'withdrew'} {formatCurrency(recentToast.amount, 'GHS')}
+                <span className="text-[#2DD4FF]">{recentToast.username}</span> {recentToast.type === 'deposit' ? 'recharged' : 'withdrew'} <span className="text-[#00D4A8] font-black">{formatCurrency(recentToast.amount, 'GHS')}</span>
               </p>
-              <p className="text-[10px] text-slate-400 truncate">via <strong className="text-slate-300">{recentToast.provider}</strong></p>
+              <p className="text-[10px] text-slate-400 truncate">
+                via <strong className="text-slate-300">{recentToast.provider}</strong> • <span className="text-slate-500">Just now</span>
+              </p>
             </div>
           </div>
         )}

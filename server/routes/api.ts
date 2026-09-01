@@ -26,9 +26,9 @@ export const AFFILIATE_MILESTONES = [
     title: 'Bronze Affiliate',
     requiredRefs: 1,
     perk: '10% First Deposit Comm',
-    rewardText: '$10 Cash Bonus',
-    rewardUsd: 10,
-    rewardGhs: 150,
+    rewardText: '$5 Cash Bonus',
+    rewardUsd: 5,
+    rewardGhs: 75,
     extraComm: 0.10, // 10% First Deposit Comm
     color: '#D97706',
   },
@@ -39,9 +39,9 @@ export const AFFILIATE_MILESTONES = [
     title: 'Silver Ambassador',
     requiredRefs: 5,
     perk: 'Priority Support & Fast Withdrawals',
-    rewardText: '$50 Instant Bonus + 1% Extra Comm',
-    rewardUsd: 50,
-    rewardGhs: 750,
+    rewardText: '$25 Instant Bonus + 1% Extra Comm',
+    rewardUsd: 25,
+    rewardGhs: 375,
     extraComm: 0.11, // 10% + 1% = 11%
     color: '#94A3B8',
   },
@@ -52,9 +52,9 @@ export const AFFILIATE_MILESTONES = [
     title: 'Gold Partner',
     requiredRefs: 12,
     perk: 'Custom Referral Link & Manager',
-    rewardText: '$250 VIP Partner Reward',
-    rewardUsd: 250,
-    rewardGhs: 3750,
+    rewardText: '$50 VIP Partner Reward',
+    rewardUsd: 50,
+    rewardGhs: 750,
     extraComm: 0.11,
     color: '#EAB308',
   },
@@ -65,9 +65,9 @@ export const AFFILIATE_MILESTONES = [
     title: 'Platinum Director',
     requiredRefs: 25,
     perk: '0% Withdrawal Fees & Exclusive Webinars',
-    rewardText: '$1,000 Executive Cash Pool',
-    rewardUsd: 1000,
-    rewardGhs: 15000,
+    rewardText: '$100 Executive Cash Pool',
+    rewardUsd: 100,
+    rewardGhs: 1500,
     extraComm: 0.12,
     color: '#2DD4FF',
   },
@@ -78,9 +78,9 @@ export const AFFILIATE_MILESTONES = [
     title: 'Diamond Legend',
     requiredRefs: 50,
     perk: 'VIP Regional Ambassador Status',
-    rewardText: '$3,000 Global Profit Share',
-    rewardUsd: 3000,
-    rewardGhs: 45000,
+    rewardText: '$200 Global Profit Share',
+    rewardUsd: 200,
+    rewardGhs: 3000,
     extraComm: 0.13,
     color: '#A855F7',
   },
@@ -1657,8 +1657,66 @@ apiRouter.post('/chat', (req: Request, res: Response) => {
 });
 
 // ================= LIVE ACTIVITY & PAYOUT STREAM =================
+const DYNAMIC_FIRST_NAMES = [
+  'Kwame', 'Abena', 'Kofi', 'Emmanuel', 'Rita', 'Daniel', 'Grace', 'Belinda', 'Bob', 'Frank',
+  'Mercy', 'Yaw', 'Samuel', 'Evelyn', 'Prince', 'Patricia', 'Cynthia', 'Derrick', 'Linda', 'Joseph',
+  'Richmond', 'Vida', 'Eric', 'Faustina', 'Gideon', 'Harriet', 'Isaac', 'Joyce', 'Kelvin', 'Lydia',
+  'Michael', 'Naomi', 'Oliver', 'Peter', 'Richard', 'Sandra', 'Thomas', 'Victor', 'Nana', 'Kojo',
+  'Boateng', 'Mensah', 'Osei', 'Appiah', 'Owusu', 'Frimpong', 'Asante', 'Kwarteng', 'Yeboah', 'Adom'
+];
+
+const DYNAMIC_PROVIDERS = [
+  'Crypto (USDT - TRC20)',
+  'Crypto (USDT - BEP20)',
+  'Crypto (USDT)',
+  'Crypto (BTC)',
+  'Crypto (TRON)',
+  'MTN MoMo',
+  'Telecel Cash',
+  'AT Money'
+];
+
+const DYNAMIC_AMOUNTS = [180, 250, 320, 450, 580, 720, 850, 1000, 1250, 1500, 1800, 2400, 3200, 4500, 6000];
+
+function generateDynamicSimulatedFeed(count = 15) {
+  const shuffledNames = [...DYNAMIC_FIRST_NAMES].sort(() => Math.random() - 0.5);
+  const feed = [];
+  const now = Date.now();
+
+  for (let i = 0; i < count; i++) {
+    const isPayout = Math.random() > 0.3; // 70% payouts, 30% deposits
+    const baseName = shuffledNames[i % shuffledNames.length];
+    const nameVariation = Math.random();
+    let username = baseName;
+    if (nameVariation < 0.35) {
+      username = `${baseName} ${String.fromCharCode(65 + (i % 26))}.`;
+    } else if (nameVariation < 0.7) {
+      username = `${baseName}_${Math.floor(10 + Math.random() * 90)}`;
+    } else if (nameVariation < 0.85) {
+      username = `0${['24', '55', '20', '27'][i % 4]}****${100 + ((i * 37) % 900)}`;
+    }
+
+    const provider = DYNAMIC_PROVIDERS[Math.floor(Math.random() * DYNAMIC_PROVIDERS.length)];
+    const amount = DYNAMIC_AMOUNTS[Math.floor(Math.random() * DYNAMIC_AMOUNTS.length)];
+    const minutesAgo = Math.floor(i * 3 + Math.random() * 4 + 1);
+
+    feed.push({
+      id: `sim_${now - minutesAgo * 60000}_${i}`,
+      type: isPayout ? ('payout' as const) : ('deposit' as const),
+      isReal: false,
+      username,
+      amount,
+      provider,
+      currency: 'GHS',
+      timestamp: new Date(now - minutesAgo * 60000).toISOString(),
+      badge: isPayout ? 'LIVE PAYOUT' : 'LIVE RECHARGE',
+    });
+  }
+  return feed;
+}
+
 apiRouter.get('/activity-stream', (req: Request, res: Response) => {
-  // Combine real user deposits & withdrawals with realistic simulated feed items
+  // Combine real user deposits & withdrawals with dynamic simulated feed items
   const realDeposits = db.deposits.map((d) => {
     const user = db.users.find((u) => u.id === d.userId);
     const maskedUser = user ? user.username : 'User_***';
@@ -1693,19 +1751,7 @@ apiRouter.get('/activity-stream', (req: Request, res: Response) => {
     };
   });
 
-  // Dynamic simulated recent feed with higher crypto weighting as requested
-  const simulatedFeed = [
-    { id: 'sim_1', type: 'payout', isReal: false, username: 'Agyekum', amount: 850, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 2 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_2', type: 'deposit', isReal: false, username: 'Prempeh', amount: 480, provider: 'Telecel Cash', currency: 'GHS', timestamp: new Date(Date.now() - 4 * 60000).toISOString(), badge: 'LIVE RECHARGE' },
-    { id: 'sim_3', type: 'payout', isReal: false, username: 'Kwame', amount: 1250, provider: 'Crypto (USDT - TRC20)', currency: 'GHS', timestamp: new Date(Date.now() - 7 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_4', type: 'deposit', isReal: false, username: 'Emmanuel', amount: 1500, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 11 * 60000).toISOString(), badge: 'PRO RECHARGE' },
-    { id: 'sim_5', type: 'payout', isReal: false, username: 'Kofi', amount: 720, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 15 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_6', type: 'payout', isReal: false, username: 'Grace', amount: 2400, provider: 'Crypto (USDT - BEP20)', currency: 'GHS', timestamp: new Date(Date.now() - 20 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_7', type: 'deposit', isReal: false, username: 'Daniel', amount: 950, provider: 'Crypto (BTC)', currency: 'GHS', timestamp: new Date(Date.now() - 26 * 60000).toISOString(), badge: 'LIVE RECHARGE' },
-    { id: 'sim_8', type: 'payout', isReal: false, username: 'Abena', amount: 650, provider: 'Crypto (USDT)', currency: 'GHS', timestamp: new Date(Date.now() - 33 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_9', type: 'payout', isReal: false, username: 'Belinda', amount: 1800, provider: 'Crypto (TRON)', currency: 'GHS', timestamp: new Date(Date.now() - 41 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-    { id: 'sim_10', type: 'payout', isReal: false, username: 'Frank', amount: 600, provider: 'MTN MoMo', currency: 'GHS', timestamp: new Date(Date.now() - 52 * 60000).toISOString(), badge: 'LIVE PAYOUT' },
-  ];
+  const simulatedFeed = generateDynamicSimulatedFeed(15);
 
   // Real items first, then simulated items
   const combined = [...realDeposits, ...realWithdrawals, ...simulatedFeed].sort(
