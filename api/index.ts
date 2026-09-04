@@ -21,12 +21,20 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Handle Vercel query rewrites (e.g. when Vercel rewrites /api/(.*) -> /api?0=$1)
+// Handle Vercel query rewrites & URL normalizations
 app.use((req, res, next) => {
-  if (req.url.startsWith('/api?') && req.query && typeof req.query[0] === 'string') {
+  // If Vercel rewrites /api/(.*) -> /api/index?0=$1 or /api?0=$1
+  if (req.query && typeof req.query[0] === 'string') {
     const subpath = req.query[0];
     req.url = subpath.startsWith('/') ? `/api${subpath}` : `/api/${subpath}`;
   }
+
+  // If Vercel rewrite preserves function name /api/index/...
+  if (req.url.startsWith('/api/index')) {
+    const cleaned = req.url.replace(/^\/api\/index/, '');
+    req.url = cleaned.startsWith('/') ? `/api${cleaned}` : (cleaned ? `/api/${cleaned}` : '/api');
+  }
+
   next();
 });
 

@@ -9,7 +9,7 @@ import {
   TransactionCloudMineX,
 } from '../config/dbStore';
 import { calculateEstimatedReward, processMiningYields } from '../services/rewardEngine';
-import { getCryptoRates, convertFiatToCrypto } from '../services/cryptoPriceService';
+import { getCryptoRates, convertFiatToCrypto, getMarketTickers } from '../services/cryptoPriceService';
 import { mobileMoneyProvider } from '../services/payment/mobileMoneyProvider';
 import { cryptoProvider } from '../services/payment/cryptoProvider';
 import { sendPasswordResetEmail } from '../services/emailService';
@@ -915,6 +915,16 @@ apiRouter.post('/mining/tick-rewards', (req: Request, res: Response) => {
     message: `${totalCredited.toFixed(2)} GHS 24h mining yield credited to balance!`,
     totalTickedReward: totalCredited,
     user,
+  });
+});
+
+// ================= LIVE MARKET TICKERS =================
+apiRouter.get(['/market/ticker', '/market/tickers'], (req: Request, res: Response) => {
+  const tickers = getMarketTickers();
+  res.json({
+    success: true,
+    tickers,
+    timestamp: new Date().toISOString(),
   });
 });
 
