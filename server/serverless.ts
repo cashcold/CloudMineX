@@ -1,10 +1,10 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import { apiRouter } from '../server/routes/api';
-import { connectMongoDB, isMongoConnected } from '../server/config/dbMongo';
-import { db } from '../server/config/dbStore';
-import { processMiningYields } from '../server/services/rewardEngine';
+import { apiRouter } from './routes/api';
+import { connectMongoDB, isMongoConnected } from './config/dbMongo';
+import { db } from './config/dbStore';
+import { processMiningYields } from './services/rewardEngine';
 
 const app = express();
 
@@ -23,14 +23,17 @@ app.use(express.urlencoded({ extended: true }));
 
 // Handle Vercel query rewrites & URL normalizations
 app.use((req, res, next) => {
-  // If Vercel rewrites /api/(.*) -> /api/index?0=$1 or /api?0=$1
+  // If Vercel rewrites /api/(.*) -> /api/index.js?0=$1 or /api/index?0=$1
   if (req.query && typeof req.query[0] === 'string') {
     const subpath = req.query[0];
     req.url = subpath.startsWith('/') ? `/api${subpath}` : `/api/${subpath}`;
   }
 
-  // If Vercel rewrite preserves function name /api/index/...
-  if (req.url.startsWith('/api/index')) {
+  // If Vercel rewrite preserves function name in URL
+  if (req.url.startsWith('/api/index.js')) {
+    const cleaned = req.url.replace(/^\/api\/index\.js/, '');
+    req.url = cleaned.startsWith('/') ? `/api${cleaned}` : (cleaned ? `/api/${cleaned}` : '/api');
+  } else if (req.url.startsWith('/api/index')) {
     const cleaned = req.url.replace(/^\/api\/index/, '');
     req.url = cleaned.startsWith('/') ? `/api${cleaned}` : (cleaned ? `/api/${cleaned}` : '/api');
   }
@@ -100,7 +103,7 @@ app.get(['/api/health', '/health', '/api', '/'], (req: Request, res: Response) =
   });
 });
 
-// Mount API routes for both prefixed and stripped routes
+// Mount API routes for both prefixed (/api/...) and direct route matching
 app.use('/api', apiRouter);
 app.use(apiRouter);
 
