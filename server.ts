@@ -8,10 +8,15 @@ import { connectMongoDB } from './server/config/dbMongo';
 import { db } from './server/config/dbStore';
 import { processMiningYields } from './server/services/rewardEngine';
 
-async function startServer() {
-  const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+export const app = express();
+const PORT = Number(process.env.PORT) || 3000;
 
+let initializationPromise: Promise<void> | undefined;
+
+export function initializeApp() {
+  if (initializationPromise) return initializationPromise;
+
+  initializationPromise = (async () => {
   // 2. Configure CORS middleware
   app.use(
     cors({
@@ -54,6 +59,13 @@ async function startServer() {
     });
   }
 
+  })();
+
+  return initializationPromise;
+}
+
+async function startServer() {
+  await initializeApp();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`CloudMineX Server running on http://0.0.0.0:${PORT}`);
 
@@ -81,6 +93,8 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start CloudMineX server:', err);
-});
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('Failed to start CloudMineX server:', err);
+  });
+}
