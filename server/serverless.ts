@@ -29,6 +29,20 @@ app.use((req, res, next) => {
     req.url = subpath.startsWith('/') ? `/api${subpath}` : `/api/${subpath}`;
   }
 
+  // If Vercel passes dynamic catch-all route params
+  if (req.query && req.query.slug) {
+    const slug = Array.isArray(req.query.slug) ? req.query.slug.join('/') : req.query.slug;
+    if (slug && typeof slug === 'string' && !req.url.includes(slug)) {
+      req.url = `/api/${slug}`;
+    }
+  }
+  if (req.query && req.query.path) {
+    const p = Array.isArray(req.query.path) ? req.query.path.join('/') : req.query.path;
+    if (p && typeof p === 'string' && !req.url.includes(p)) {
+      req.url = `/api/${p}`;
+    }
+  }
+
   // If Vercel rewrite preserves function name in URL
   if (req.url.startsWith('/api/index.js')) {
     const cleaned = req.url.replace(/^\/api\/index\.js/, '');

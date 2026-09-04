@@ -2821,6 +2821,18 @@ app.use((req, res, next) => {
     const subpath = req.query[0];
     req.url = subpath.startsWith("/") ? `/api${subpath}` : `/api/${subpath}`;
   }
+  if (req.query && req.query.slug) {
+    const slug = Array.isArray(req.query.slug) ? req.query.slug.join("/") : req.query.slug;
+    if (slug && typeof slug === "string" && !req.url.includes(slug)) {
+      req.url = `/api/${slug}`;
+    }
+  }
+  if (req.query && req.query.path) {
+    const p = Array.isArray(req.query.path) ? req.query.path.join("/") : req.query.path;
+    if (p && typeof p === "string" && !req.url.includes(p)) {
+      req.url = `/api/${p}`;
+    }
+  }
   if (req.url.startsWith("/api/index.js")) {
     const cleaned = req.url.replace(/^\/api\/index\.js/, "");
     req.url = cleaned.startsWith("/") ? `/api${cleaned}` : cleaned ? `/api/${cleaned}` : "/api";
