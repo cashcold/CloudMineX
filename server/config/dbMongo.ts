@@ -176,7 +176,7 @@ export async function connectMongoDB(): Promise<boolean> {
     return false;
   }
 
-  if (isConnected) return true;
+  if (isConnected && mongoose.connection.readyState === 1) return true;
 
   try {
     console.log('[MongoDB] Attempting to connect to MongoDB cluster (Database: CloudMineX)...');

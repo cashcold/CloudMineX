@@ -158,6 +158,7 @@ export type ChatMessage = ChatMessageCloudMineX;
 export type AppSettings = AppSettingsCloudMineX;
 
 const DATA_FILE = path.join(process.cwd(), 'cloudminex_data.json');
+const TMP_DATA_FILE = path.join('/tmp', 'cloudminex_data.json');
 
 class DBStore {
   public users: UserCloudMineX[] = [];
@@ -199,8 +200,14 @@ class DBStore {
 
   private loadData() {
     try {
-      if (fs.existsSync(DATA_FILE)) {
-        const fileContent = fs.readFileSync(DATA_FILE, 'utf-8');
+      let fileToRead = DATA_FILE;
+      // In serverless environments (e.g. Vercel), check if latest data was written to /tmp
+      if (process.env.VERCEL && fs.existsSync(TMP_DATA_FILE)) {
+        fileToRead = TMP_DATA_FILE;
+      }
+
+      if (fs.existsSync(fileToRead)) {
+        const fileContent = fs.readFileSync(fileToRead, 'utf-8');
         const parsed = JSON.parse(fileContent);
         this.users = parsed.users || [];
         this.miningPlans = parsed.miningPlans || [];
@@ -367,27 +374,35 @@ class DBStore {
   }
 
   public saveData() {
-    try {
-      const data = {
-        users: this.users,
-        miningPlans: this.miningPlans,
-        miningContracts: this.miningContracts,
-        deposits: this.deposits,
-        withdrawals: this.withdrawals,
-        transactions: this.transactions,
-        referrals: this.referrals,
-        chatMessages: this.chatMessages,
-        settings: this.settings,
-      };
-      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    const data = {
+      users: this.users,
+      miningPlans: this.miningPlans,
+      miningContracts: this.miningContracts,
+      deposits: this.deposits,
+      withdrawals: this.withdrawals,
+      transactions: this.transactions,
+      referrals: this.referrals,
+      chatMessages: this.chatMessages,
+      settings: this.settings,
+    };
+    const jsonString = JSON.stringify(data, null, 2);
 
-      // Async sync to MongoDB if connected
-      this.syncToMongo().catch((err) => {
-        // Silent catch for background mongo sync
-      });
+    try {
+      const targetFile = process.env.VERCEL ? TMP_DATA_FILE : DATA_FILE;
+      fs.writeFileSync(targetFile, jsonString, 'utf-8');
     } catch (err) {
-      console.error('Error saving cloudminex_data.json:', err);
+      // If primary file write fails (e.g. read-only filesystem in serverless), fallback to /tmp
+      try {
+        fs.writeFileSync(TMP_DATA_FILE, jsonString, 'utf-8');
+      } catch (tmpErr) {
+        console.warn('[DBStore] Read-only serverless filesystem warning. Using in-memory & MongoDB persistence.');
+      }
     }
+
+    // Always sync to MongoDB if connected, even if filesystem is read-only
+    this.syncToMongo().catch((err) => {
+      // Silent catch for background mongo sync
+    });
   }
 
   public async syncToMongo() {
