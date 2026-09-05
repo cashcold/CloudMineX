@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors'; // 1. Import cors
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { apiRouter } from './server/routes/api';
 import { connectMongoDB } from './server/config/dbMongo';
 import { db } from './server/config/dbStore';
@@ -57,7 +56,8 @@ export function initializeApp() {
   // Client SPA serving only when running standalone server (not inside Vercel serverless)
   if (!process.env.VERCEL) {
     if (process.env.NODE_ENV !== 'production') {
-      const vite = await createViteServer({
+      const { createServer } = await import('vite');
+      const vite = await createServer({
         server: { middlewareMode: true },
         appType: 'spa',
       });
