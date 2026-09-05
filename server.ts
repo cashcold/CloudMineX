@@ -36,27 +36,39 @@ export function initializeApp() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // API Routes
+  // URL normalizer for Vercel rewrites
+  app.use((req, res, next) => {
+    if (req.query && typeof req.query[0] === 'string') {
+      const sub = req.query[0];
+      req.url = sub.startsWith('/') ? `/api${sub}` : `/api/${sub}`;
+    }
+    next();
+  });
+
+  // API Routes - mounted for both /api/* and direct subpaths
   app.use('/api', apiRouter);
+  app.use(apiRouter);
 
   // Health check endpoint
-  app.get('/api/health', (req, res) => {
+  app.get(['/api/health', '/health', '/api'], (req, res) => {
     res.json({ status: 'ok', app: 'CloudMineX Digital Mining Dashboard', mode: 'Demo / Production Ready' });
   });
 
-  // Vite middleware in development mode
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+  // Client SPA serving only when running standalone server (not inside Vercel serverless)
+  if (!process.env.VERCEL) {
+    if (process.env.NODE_ENV !== 'production') {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
   }
 
   })();
