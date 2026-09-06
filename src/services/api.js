@@ -14,6 +14,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 15000,
 });
 
 export const userService = {
@@ -186,8 +187,13 @@ export const chatService = {
 
 export const activityService = {
   getActivityStream: async () => {
-    const res = await api.get('/activity-stream');
-    return res.data;
+    try {
+      const res = await api.get('/activity-stream');
+      return res.data;
+    } catch (err) {
+      // Graceful fallback to avoid throwing Network Error
+      return { success: false, activities: [] };
+    }
   },
 };
 

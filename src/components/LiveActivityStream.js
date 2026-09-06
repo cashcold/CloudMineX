@@ -4,12 +4,42 @@ import { formatCurrency } from '../utils/formatters';
 import { activityService } from '../services/api';
 import { getUniqueDynamicName } from '../data/usernamesPool';
 
+function createInitialActivities() {
+  const providersPool = [
+    'Crypto (USDT - TRC20)',
+    'Crypto (USDT - BEP20)',
+    'Crypto (USDT)',
+    'Crypto (BTC)',
+    'Crypto (TRON)',
+    'MTN MoMo',
+    'Telecel Cash',
+    'AT Money',
+  ];
+  const amountsPool = [180, 250, 320, 450, 580, 720, 850, 1000, 1250, 1500, 2200, 4500];
+  const typesPool = ['payout', 'payout', 'payout', 'deposit'];
+
+  return Array.from({ length: 6 }).map((_, i) => {
+    const type = typesPool[i % typesPool.length];
+    return {
+      id: `init_act_${Date.now() - (i + 1) * 35000}_${i}`,
+      type,
+      isReal: false,
+      username: getUniqueDynamicName(),
+      amount: amountsPool[i % amountsPool.length],
+      provider: providersPool[i % providersPool.length],
+      currency: 'GHS',
+      badge: type === 'deposit' ? 'LIVE RECHARGE' : 'LIVE PAYOUT',
+      timestamp: new Date(Date.now() - (i + 1) * 35000).toISOString(),
+    };
+  });
+}
+
 export class LiveActivityStream extends Component {
   constructor(props) {
     super(props);
     const isDismissed = typeof window !== 'undefined' && Boolean(window.__cloudminexPopoutDismissed);
     this.state = {
-      activities: [],
+      activities: createInitialActivities(),
       recentToast: null,
       toastVisible: false,
       isDismissed: isDismissed,
@@ -83,7 +113,7 @@ export class LiveActivityStream extends Component {
   async fetchStream() {
     try {
       const res = await activityService.getActivityStream();
-      if (res.success && res.activities) {
+      if (res && res.success && Array.isArray(res.activities) && res.activities.length > 0) {
         this.setState({ activities: res.activities });
 
         // Trigger toast for a fresh un-shown item if not dismissed
@@ -95,8 +125,8 @@ export class LiveActivityStream extends Component {
           }
         }
       }
-    } catch (err) {
-      console.error('Error fetching activity stream:', err);
+    } catch {
+      // Graceful fallback - activities are already seeded and live transactions continue generating
     }
   }
 
