@@ -414,7 +414,7 @@ var DBStore = class {
       this.saveData();
     }
   }
-  saveData() {
+  async saveData() {
     const data = {
       users: this.users,
       miningPlans: this.miningPlans,
@@ -437,8 +437,11 @@ var DBStore = class {
         console.warn("[DBStore] Read-only serverless filesystem warning. Using in-memory & MongoDB persistence.");
       }
     }
-    this.syncToMongo().catch((err) => {
-    });
+    try {
+      await this.syncToMongo();
+    } catch (err) {
+      console.warn("[DBStore] Background MongoDB sync notice:", err);
+    }
   }
   async syncToMongo() {
     try {
@@ -455,31 +458,33 @@ var DBStore = class {
         AppSettingsModel: AppSettingsModel2
       } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
       if (!isMongoConnected2()) return;
-      for (const u of this.users) {
-        await UserModel2.updateOne({ id: u.id }, u, { upsert: true });
+      const ops = [];
+      if (this.users.length > 0) {
+        ops.push(...this.users.map((u) => UserModel2.updateOne({ id: u.id }, { $set: u }, { upsert: true })));
       }
-      for (const p of this.miningPlans) {
-        await MiningPlanModel2.updateOne({ id: p.id }, p, { upsert: true });
+      if (this.miningPlans.length > 0) {
+        ops.push(...this.miningPlans.map((p) => MiningPlanModel2.updateOne({ id: p.id }, { $set: p }, { upsert: true })));
       }
-      for (const c of this.miningContracts) {
-        await MiningContractModel2.updateOne({ id: c.id }, c, { upsert: true });
+      if (this.miningContracts.length > 0) {
+        ops.push(...this.miningContracts.map((c) => MiningContractModel2.updateOne({ id: c.id }, { $set: c }, { upsert: true })));
       }
-      for (const d of this.deposits) {
-        await DepositModel2.updateOne({ id: d.id }, d, { upsert: true });
+      if (this.deposits.length > 0) {
+        ops.push(...this.deposits.map((d) => DepositModel2.updateOne({ id: d.id }, { $set: d }, { upsert: true })));
       }
-      for (const w of this.withdrawals) {
-        await WithdrawalModel2.updateOne({ id: w.id }, w, { upsert: true });
+      if (this.withdrawals.length > 0) {
+        ops.push(...this.withdrawals.map((w) => WithdrawalModel2.updateOne({ id: w.id }, { $set: w }, { upsert: true })));
       }
-      for (const t of this.transactions) {
-        await TransactionModel2.updateOne({ id: t.id }, t, { upsert: true });
+      if (this.transactions.length > 0) {
+        ops.push(...this.transactions.map((t) => TransactionModel2.updateOne({ id: t.id }, { $set: t }, { upsert: true })));
       }
-      for (const r of this.referrals) {
-        await ReferralModel2.updateOne({ id: r.id }, r, { upsert: true });
+      if (this.referrals.length > 0) {
+        ops.push(...this.referrals.map((r) => ReferralModel2.updateOne({ id: r.id }, { $set: r }, { upsert: true })));
       }
-      for (const cm of this.chatMessages) {
-        await ChatMessageModel2.updateOne({ id: cm.id }, cm, { upsert: true });
+      if (this.chatMessages.length > 0) {
+        ops.push(...this.chatMessages.map((cm) => ChatMessageModel2.updateOne({ id: cm.id }, { $set: cm }, { upsert: true })));
       }
-      await AppSettingsModel2.updateOne({}, this.settings, { upsert: true });
+      ops.push(AppSettingsModel2.updateOne({}, { $set: this.settings }, { upsert: true }));
+      await Promise.all(ops);
     } catch (err) {
       console.error("[MongoDB] Sync error:", err);
     }
@@ -2102,6 +2107,10 @@ apiRouter.post("/deposits/mobile-money", async (req, res) => {
   if (!userId || !amount || Number(amount) < 100) {
     return res.status(400).json({ success: false, message: "Minimum deposit amount is GHS 100." });
   }
+  try {
+    await db.syncFromMongo();
+  } catch (err) {
+  }
   const result = await mobileMoneyProvider.createDeposit({
     userId,
     amount: Number(amount),
@@ -2121,7 +2130,7 @@ apiRouter.post("/deposits/mobile-money", async (req, res) => {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   db.deposits.unshift(deposit);
-  db.saveData();
+  await db.saveData();
   res.json({
     success: true,
     deposit,
@@ -2132,6 +2141,10 @@ apiRouter.post("/deposits/crypto", async (req, res) => {
   const { userId, currency, network, amountFiat } = req.body;
   if (!userId || !amountFiat || Number(amountFiat) < 100) {
     return res.status(400).json({ success: false, message: "Minimum deposit amount is GHS 100." });
+  }
+  try {
+    await db.syncFromMongo();
+  } catch (err) {
   }
   const curr = (currency || "USDT").toUpperCase();
   const result = await cryptoProvider.createDeposit({
@@ -2159,14 +2172,56 @@ apiRouter.post("/deposits/crypto", async (req, res) => {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   db.deposits.unshift(deposit);
-  db.saveData();
+  await db.saveData();
   res.json({
     success: true,
     deposit,
     paymentDetails: result
   });
 });
-apiRouter.get("/deposits/:userId", (req, res) => {
+apiRouter.post("/deposits/submit-review", async (req, res) => {
+  const { depositId, reference } = req.body;
+  try {
+    await db.syncFromMongo();
+  } catch (e) {
+  }
+  let deposit = db.deposits.find(
+    (d) => depositId && d.id === depositId || reference && d.reference?.trim().toLowerCase() === reference.trim().toLowerCase()
+  );
+  if (deposit) {
+    deposit.status = "pending";
+    deposit.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  } else if (reference) {
+    const fallbackUser = db.users[0];
+    deposit = {
+      id: `dep_${Date.now()}`,
+      userId: fallbackUser ? fallbackUser.id : "usr_default",
+      type: "mobile_money",
+      provider: "Mobile Money",
+      currency: "GHS",
+      amount: 100,
+      reference: reference.trim(),
+      status: "pending",
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    db.deposits.unshift(deposit);
+  }
+  if (deposit) {
+    await db.saveData();
+    return res.json({
+      success: true,
+      message: `Deposit reference ${reference || deposit.reference} submitted for Admin review!`,
+      deposit
+    });
+  }
+  res.status(400).json({ success: false, message: "Deposit reference could not be registered." });
+});
+apiRouter.get("/deposits/:userId", async (req, res) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {
+  }
   const userDeposits = db.deposits.filter((d) => d.userId === req.params.userId);
   res.json({ success: true, deposits: userDeposits });
 });
@@ -2458,7 +2513,12 @@ apiRouter.post("/referrals/claim-milestone", async (req, res) => {
 apiRouter.get("/settings", (req, res) => {
   res.json({ success: true, settings: db.settings });
 });
-apiRouter.get("/admin/stats", (req, res) => {
+apiRouter.get("/admin/stats", async (req, res) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {
+    console.warn("[Admin Stats] syncFromMongo notice:", err);
+  }
   const totalUsers = db.users.length;
   const activeContracts = db.miningContracts.filter((c) => c.status === "active").length;
   const totalDeposits = db.deposits.reduce((sum, d) => d.status === "confirmed" ? sum + d.amount : sum, 0);
@@ -2480,7 +2540,7 @@ apiRouter.get("/admin/stats", (req, res) => {
     settings: db.settings
   });
 });
-apiRouter.post("/admin/plans", (req, res) => {
+apiRouter.post("/admin/plans", async (req, res) => {
   const { name, description, price, duration, rewardRate } = req.body;
   const pPrice = Number(price);
   const pDur = Number(duration);
@@ -2502,10 +2562,10 @@ apiRouter.post("/admin/plans", (req, res) => {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   db.miningPlans.push(newPlan);
-  db.saveData();
+  await db.saveData();
   res.json({ success: true, message: "New mining plan created successfully", plan: newPlan });
 });
-apiRouter.post("/admin/plans/:id", (req, res) => {
+apiRouter.post("/admin/plans/:id", async (req, res) => {
   const plan = db.miningPlans.find((p) => p.id === req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: "Plan not found" });
   const { price, duration, rewardRate, active } = req.body;
@@ -2516,10 +2576,113 @@ apiRouter.post("/admin/plans/:id", (req, res) => {
   plan.estimatedDailyReward = Number((plan.price * plan.rewardRate).toFixed(2));
   plan.estimatedTotalReward = Number((plan.estimatedDailyReward * plan.duration).toFixed(2));
   plan.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  db.saveData();
+  await db.saveData();
   res.json({ success: true, message: "Plan updated successfully", plan });
 });
-apiRouter.post("/admin/deposits/:id/approve", (req, res) => {
+apiRouter.post("/admin/deposits/reference/approve", async (req, res) => {
+  const { reference, userId, username, amount, note } = req.body;
+  if (!reference) {
+    return res.status(400).json({ success: false, message: "Reference is required." });
+  }
+  try {
+    await db.syncFromMongo();
+  } catch (err) {
+  }
+  const trimmedRef = reference.trim();
+  let deposit = db.deposits.find((d) => d.reference && d.reference.toLowerCase() === trimmedRef.toLowerCase());
+  if (deposit) {
+    if (deposit.status === "confirmed") {
+      return res.status(400).json({ success: false, message: `Deposit reference ${trimmedRef} is already confirmed.` });
+    }
+    deposit.status = "confirmed";
+    deposit.confirmations = deposit.requiredConfirmations || 3;
+    deposit.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const targetUser2 = db.users.find((u) => u.id === deposit.userId);
+    if (targetUser2) {
+      targetUser2.balance = Number((targetUser2.balance + deposit.amount).toFixed(2));
+      targetUser2.totalDeposits = Number(((targetUser2.totalDeposits || 0) + deposit.amount).toFixed(2));
+      targetUser2.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      db.transactions.unshift({
+        id: `tx_dep_${Date.now()}`,
+        userId: targetUser2.id,
+        type: "deposit",
+        amount: deposit.amount,
+        currency: deposit.currency || "GHS",
+        reference: deposit.reference,
+        description: `Admin Verified Deposit: ${deposit.reference}`,
+        status: "completed",
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      creditReferralBonus(targetUser2, deposit);
+    }
+    await db.saveData();
+    return res.json({
+      success: true,
+      message: `Deposit reference ${trimmedRef} approved and credited successfully!`,
+      deposit,
+      user: targetUser2
+    });
+  }
+  let targetUser = null;
+  if (userId) {
+    targetUser = db.users.find((u) => u.id === userId);
+  }
+  if (!targetUser && username) {
+    targetUser = db.users.find((u) => u.username?.toLowerCase() === username.trim().toLowerCase());
+  }
+  if (!targetUser && db.users.length > 0) {
+    targetUser = db.users[0];
+  }
+  if (!targetUser) {
+    return res.status(404).json({
+      success: false,
+      message: `User not found to credit for reference "${trimmedRef}".`
+    });
+  }
+  const depositAmount = Number(amount) || 100;
+  const newDeposit = {
+    id: `dep_${Date.now()}`,
+    userId: targetUser.id,
+    type: "mobile_money",
+    provider: "Mobile Money (Admin Verified)",
+    currency: "GHS",
+    amount: depositAmount,
+    reference: trimmedRef,
+    status: "confirmed",
+    confirmations: 3,
+    requiredConfirmations: 3,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  db.deposits.unshift(newDeposit);
+  targetUser.balance = Number((targetUser.balance + depositAmount).toFixed(2));
+  targetUser.totalDeposits = Number(((targetUser.totalDeposits || 0) + depositAmount).toFixed(2));
+  targetUser.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  db.transactions.unshift({
+    id: `tx_dep_${Date.now()}`,
+    userId: targetUser.id,
+    type: "deposit",
+    amount: depositAmount,
+    currency: "GHS",
+    reference: trimmedRef,
+    description: note || `Admin Verified Deposit: ${trimmedRef}`,
+    status: "completed",
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  creditReferralBonus(targetUser, newDeposit);
+  await db.saveData();
+  return res.json({
+    success: true,
+    message: `Reference ${trimmedRef} verified & credited with GHS ${depositAmount.toFixed(2)} to ${targetUser.username}!`,
+    deposit: newDeposit,
+    user: targetUser
+  });
+});
+apiRouter.post("/admin/deposits/:id/approve", async (req, res) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {
+  }
   const deposit = db.deposits.find((d) => d.id === req.params.id);
   if (!deposit) return res.status(404).json({ success: false, message: "Deposit not found" });
   if (deposit.status === "confirmed") {
@@ -2546,15 +2709,19 @@ apiRouter.post("/admin/deposits/:id/approve", (req, res) => {
     });
     creditReferralBonus(user, deposit);
   }
-  db.saveData();
+  await db.saveData();
   res.json({ success: true, message: "Deposit approved and user credited successfully", deposit, user });
 });
-apiRouter.post("/admin/deposits/:id/reject", (req, res) => {
+apiRouter.post("/admin/deposits/:id/reject", async (req, res) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {
+  }
   const deposit = db.deposits.find((d) => d.id === req.params.id);
   if (!deposit) return res.status(404).json({ success: false, message: "Deposit not found" });
   deposit.status = "rejected";
   deposit.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  db.saveData();
+  await db.saveData();
   res.json({ success: true, message: "Deposit rejected successfully", deposit });
 });
 apiRouter.post("/admin/users/:id/credit", (req, res) => {

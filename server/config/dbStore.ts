@@ -373,7 +373,7 @@ class DBStore {
     }
   }
 
-  public saveData() {
+  public async saveData() {
     const data = {
       users: this.users,
       miningPlans: this.miningPlans,
@@ -399,10 +399,12 @@ class DBStore {
       }
     }
 
-    // Always sync to MongoDB if connected, even if filesystem is read-only
-    this.syncToMongo().catch((err) => {
-      // Silent catch for background mongo sync
-    });
+    // Always sync to MongoDB and await completion to ensure serverless state durability
+    try {
+      await this.syncToMongo();
+    } catch (err) {
+      console.warn('[DBStore] Background MongoDB sync notice:', err);
+    }
   }
 
   public async syncToMongo() {
@@ -422,48 +424,52 @@ class DBStore {
 
       if (!isMongoConnected()) return;
 
+      const ops: Promise<any>[] = [];
+
       // Upsert users
-      for (const u of this.users) {
-        await UserModel.updateOne({ id: u.id }, u, { upsert: true });
+      if (this.users.length > 0) {
+        ops.push(...this.users.map((u) => UserModel.updateOne({ id: u.id }, { $set: u }, { upsert: true })));
       }
 
       // Upsert plans
-      for (const p of this.miningPlans) {
-        await MiningPlanModel.updateOne({ id: p.id }, p, { upsert: true });
+      if (this.miningPlans.length > 0) {
+        ops.push(...this.miningPlans.map((p) => MiningPlanModel.updateOne({ id: p.id }, { $set: p }, { upsert: true })));
       }
 
       // Upsert contracts
-      for (const c of this.miningContracts) {
-        await MiningContractModel.updateOne({ id: c.id }, c, { upsert: true });
+      if (this.miningContracts.length > 0) {
+        ops.push(...this.miningContracts.map((c) => MiningContractModel.updateOne({ id: c.id }, { $set: c }, { upsert: true })));
       }
 
       // Upsert deposits
-      for (const d of this.deposits) {
-        await DepositModel.updateOne({ id: d.id }, d, { upsert: true });
+      if (this.deposits.length > 0) {
+        ops.push(...this.deposits.map((d) => DepositModel.updateOne({ id: d.id }, { $set: d }, { upsert: true })));
       }
 
       // Upsert withdrawals
-      for (const w of this.withdrawals) {
-        await WithdrawalModel.updateOne({ id: w.id }, w, { upsert: true });
+      if (this.withdrawals.length > 0) {
+        ops.push(...this.withdrawals.map((w) => WithdrawalModel.updateOne({ id: w.id }, { $set: w }, { upsert: true })));
       }
 
       // Upsert transactions
-      for (const t of this.transactions) {
-        await TransactionModel.updateOne({ id: t.id }, t, { upsert: true });
+      if (this.transactions.length > 0) {
+        ops.push(...this.transactions.map((t) => TransactionModel.updateOne({ id: t.id }, { $set: t }, { upsert: true })));
       }
 
       // Upsert referrals
-      for (const r of this.referrals) {
-        await ReferralModel.updateOne({ id: r.id }, r, { upsert: true });
+      if (this.referrals.length > 0) {
+        ops.push(...this.referrals.map((r) => ReferralModel.updateOne({ id: r.id }, { $set: r }, { upsert: true })));
       }
 
       // Upsert chat messages
-      for (const cm of this.chatMessages) {
-        await ChatMessageModel.updateOne({ id: cm.id }, cm, { upsert: true });
+      if (this.chatMessages.length > 0) {
+        ops.push(...this.chatMessages.map((cm) => ChatMessageModel.updateOne({ id: cm.id }, { $set: cm }, { upsert: true })));
       }
 
       // Upsert settings
-      await AppSettingsModel.updateOne({}, this.settings, { upsert: true });
+      ops.push(AppSettingsModel.updateOne({}, { $set: this.settings }, { upsert: true }));
+
+      await Promise.all(ops);
     } catch (err) {
       console.error('[MongoDB] Sync error:', err);
     }

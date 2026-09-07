@@ -92,6 +92,10 @@ export const depositService = {
     const res = await api.get(`/deposits/${userId}`);
     return res.data;
   },
+  submitDepositForReview: async (depositId, reference) => {
+    const res = await api.post('/deposits/submit-review', { depositId, reference });
+    return res.data;
+  },
   confirmDeposit: async (depositId) => {
     const res = await api.post(`/deposits/${depositId}/confirm-demo`);
     return res.data;
@@ -150,6 +154,10 @@ export const adminService = {
   },
   approveDeposit: async (depositId) => {
     const res = await api.post(`/admin/deposits/${depositId}/approve`);
+    return res.data;
+  },
+  approveDepositByReference: async (data) => {
+    const res = await api.post('/admin/deposits/reference/approve', data);
     return res.data;
   },
   rejectDeposit: async (depositId) => {

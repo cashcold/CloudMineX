@@ -13,24 +13,66 @@ export class AdminDashboard extends Component {
       showPassword: false,
       loginError: '',
       statsData: null,
-      activeSubTab: 'PLANS', // PLANS, USERS, SETTINGS
+      activeSubTab: 'DEPOSITS', // DEPOSITS, USERS, WITHDRAWALS, PLANS, SETTINGS
       isLoading: isAuthed,
       newPlanName: '',
       newPlanPrice: '',
       newPlanDuration: '7',
       newPlanRate: '5',
       newPlanDesc: '',
+      quickRef: 'MOMO-1788818884878-4143',
+      quickAmount: '100',
+      quickUsername: '',
       isSubmitting: false,
       message: '',
       errorMessage: '',
     };
     this.handleAdminLogin = this.handleAdminLogin.bind(this);
     this.handleAdminLogout = this.handleAdminLogout.bind(this);
+    this.handleQuickApproveByReference = this.handleQuickApproveByReference.bind(this);
   }
 
   componentDidMount() {
     if (this.state.isAuthenticated) {
       this.loadAdminStats();
+    }
+  }
+
+  async handleQuickApproveByReference(e) {
+    if (e) e.preventDefault();
+    const { quickRef, quickAmount, quickUsername } = this.state;
+    if (!quickRef) {
+      this.setState({ errorMessage: 'Please enter a payment reference.' });
+      return;
+    }
+    this.setState({ isSubmitting: true, errorMessage: '', message: '' });
+    try {
+      const res = await adminService.approveDepositByReference({
+        reference: quickRef.trim(),
+        amount: Number(quickAmount) || 100,
+        username: quickUsername ? quickUsername.trim() : undefined,
+      });
+      if (res.success) {
+        this.setState({
+          message: res.message || `Reference ${quickRef} verified and credited successfully!`,
+          quickRef: '',
+          isSubmitting: false,
+        });
+        if (window.triggerJackpotCelebration) {
+          window.triggerJackpotCelebration({
+            type: 'deposit',
+            amount: Number(quickAmount) || 100,
+            title: 'DEPOSIT CONFIRMED!',
+            message: `Deposit reference ${quickRef} credited to user balance!`,
+          });
+        }
+        await this.loadAdminStats();
+      }
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Failed to verify deposit reference.',
+        isSubmitting: false,
+      });
     }
   }
 
@@ -284,34 +326,138 @@ export class AdminDashboard extends Component {
         )}
 
         {/* Sub Navigation Tabs */}
-        <div className="flex items-center gap-1.5 sm:gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
-          {[
-            { id: 'DEPOSITS', label: 'Deposits' },
-            { id: 'USERS', label: 'Users & Credit' },
-            { id: 'WITHDRAWALS', label: 'Withdrawals' },
-            { id: 'PLANS', label: 'Mining Plans' },
-            { id: 'SETTINGS', label: 'Settings' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => this.setState({ activeSubTab: tab.id, message: '', errorMessage: '' })}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                activeSubTab === tab.id
-                  ? 'bg-[#00D4A8] text-[#07111F]'
-                  : 'bg-[#10253A] text-slate-400 hover:text-white border border-slate-800'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {(() => {
+          const pendingDepositsCount = statsData?.deposits?.filter(
+            (d) => d.status === 'pending' || d.status === 'confirming' || d.status === 'detected'
+          )?.length || 0;
+          const pendingWithdrawalsCount = statsData?.withdrawals?.filter((w) => w.status === 'pending')?.length || 0;
+
+          return (
+            <div className="flex items-center gap-1.5 sm:gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
+              {[
+                { id: 'DEPOSITS', label: 'Deposits', badge: pendingDepositsCount },
+                { id: 'USERS', label: 'Users & Credit' },
+                { id: 'WITHDRAWALS', label: 'Withdrawals', badge: pendingWithdrawalsCount },
+                { id: 'PLANS', label: 'Mining Plans' },
+                { id: 'SETTINGS', label: 'Settings' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => this.setState({ activeSubTab: tab.id, message: '', errorMessage: '' })}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                    activeSubTab === tab.id
+                      ? 'bg-[#00D4A8] text-[#07111F]'
+                      : 'bg-[#10253A] text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {tab.badge > 0 && (
+                    <span
+                      className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                        activeSubTab === tab.id ? 'bg-[#07111F] text-[#00D4A8]' : 'bg-amber-400 text-[#07111F]'
+                      }`}
+                    >
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* SUB TAB: DEPOSITS MANAGEMENT */}
         {activeSubTab === 'DEPOSITS' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="space-y-4">
+            {/* Quick Reference Verification & Direct Credit Card */}
+            <form
+              onSubmit={this.handleQuickApproveByReference}
+              className="bg-[#0c1e30] p-4 rounded-2xl border border-[#00D4A8]/30 shadow-lg shadow-[#00D4A8]/5 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-[#00D4A8]" />
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                    ⚡ Quick Reference Approval & Verification
+                  </h4>
+                </div>
+                <span className="text-[10px] text-[#00D4A8] font-bold bg-[#00D4A8]/10 px-2.5 py-0.5 rounded-full border border-[#00D4A8]/20">
+                  Direct Credit
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                Have a Mobile Money or transaction reference (e.g.{' '}
+                <span className="text-[#00D4A8] font-mono font-bold">MOMO-1788818884878-4143</span>)? Enter it below to
+                verify, approve, and credit the user instantly.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="text-[10px] text-slate-400 font-semibold uppercase block mb-1">
+                    Deposit Reference Number
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. MOMO-1788818884878-4143"
+                    value={this.state.quickRef}
+                    onChange={(e) => this.setState({ quickRef: e.target.value })}
+                    className="w-full bg-[#07111F] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 font-semibold uppercase block mb-1">
+                    Amount (GHS)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="100"
+                    value={this.state.quickAmount}
+                    onChange={(e) => this.setState({ quickAmount: e.target.value })}
+                    className="w-full bg-[#07111F] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 font-semibold uppercase block mb-1">
+                    Credit User
+                  </label>
+                  <select
+                    value={this.state.quickUsername}
+                    onChange={(e) => this.setState({ quickUsername: e.target.value })}
+                    className="w-full bg-[#07111F] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#00D4A8]"
+                  >
+                    <option value="">Default (First User)</option>
+                    {statsData &&
+                      statsData.users &&
+                      statsData.users.map((u) => (
+                        <option key={u.id} value={u.username}>
+                          {u.username} (Bal: GHS {u.balance})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !this.state.quickRef}
+                  className="w-full sm:w-auto px-4 py-2 bg-[#00D4A8] text-[#07111F] font-extrabold text-xs rounded-xl hover:brightness-110 transition-all flex items-center justify-center gap-1.5 shadow-md shadow-[#00D4A8]/20 disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isSubmitting ? 'Verifying & Crediting...' : 'Verify & Credit Deposit Now'}</span>
+                </button>
+              </div>
+            </form>
+
+            <div className="flex items-center justify-between pt-1">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">User Payment Deposits</h3>
-              <span className="text-[10px] text-slate-400">Click Approve to credit user balance</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => this.loadAdminStats()}
+                  className="text-[10px] text-[#00D4A8] hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                  <span>Refresh List</span>
+                </button>
+              </div>
             </div>
 
             {statsData && statsData.deposits && statsData.deposits.length > 0 ? (

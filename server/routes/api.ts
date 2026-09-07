@@ -963,6 +963,10 @@ apiRouter.post('/deposits/mobile-money', async (req: Request, res: Response) => 
     return res.status(400).json({ success: false, message: 'Minimum deposit amount is GHS 100.' });
   }
 
+  try {
+    await db.syncFromMongo();
+  } catch (err) {}
+
   const result = await mobileMoneyProvider.createDeposit({
     userId,
     amount: Number(amount),
@@ -984,7 +988,7 @@ apiRouter.post('/deposits/mobile-money', async (req: Request, res: Response) => 
   };
 
   db.deposits.unshift(deposit);
-  db.saveData();
+  await db.saveData();
 
   res.json({
     success: true,
@@ -998,6 +1002,10 @@ apiRouter.post('/deposits/crypto', async (req: Request, res: Response) => {
   if (!userId || !amountFiat || Number(amountFiat) < 100) {
     return res.status(400).json({ success: false, message: 'Minimum deposit amount is GHS 100.' });
   }
+
+  try {
+    await db.syncFromMongo();
+  } catch (err) {}
 
   const curr = (currency || 'USDT').toUpperCase() as 'BTC' | 'ETH' | 'USDT';
   const result = await cryptoProvider.createDeposit({
@@ -1032,7 +1040,7 @@ apiRouter.post('/deposits/crypto', async (req: Request, res: Response) => {
   };
 
   db.deposits.unshift(deposit);
-  db.saveData();
+  await db.saveData();
 
   res.json({
     success: true,
@@ -1041,7 +1049,52 @@ apiRouter.post('/deposits/crypto', async (req: Request, res: Response) => {
   });
 });
 
-apiRouter.get('/deposits/:userId', (req: Request, res: Response) => {
+apiRouter.post('/deposits/submit-review', async (req: Request, res: Response) => {
+  const { depositId, reference } = req.body;
+  try {
+    await db.syncFromMongo();
+  } catch (e) {}
+
+  let deposit = db.deposits.find(
+    (d) => (depositId && d.id === depositId) || (reference && d.reference?.trim().toLowerCase() === reference.trim().toLowerCase())
+  );
+
+  if (deposit) {
+    deposit.status = 'pending';
+    deposit.updatedAt = new Date().toISOString();
+  } else if (reference) {
+    const fallbackUser = db.users[0];
+    deposit = {
+      id: `dep_${Date.now()}`,
+      userId: fallbackUser ? fallbackUser.id : 'usr_default',
+      type: 'mobile_money',
+      provider: 'Mobile Money',
+      currency: 'GHS',
+      amount: 100,
+      reference: reference.trim(),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    db.deposits.unshift(deposit);
+  }
+
+  if (deposit) {
+    await db.saveData();
+    return res.json({
+      success: true,
+      message: `Deposit reference ${reference || deposit.reference} submitted for Admin review!`,
+      deposit,
+    });
+  }
+
+  res.status(400).json({ success: false, message: 'Deposit reference could not be registered.' });
+});
+
+apiRouter.get('/deposits/:userId', async (req: Request, res: Response) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {}
   const userDeposits = db.deposits.filter((d) => d.userId === req.params.userId);
   res.json({ success: true, deposits: userDeposits });
 });
@@ -1410,7 +1463,13 @@ apiRouter.get('/settings', (req: Request, res: Response) => {
 });
 
 // ================= ADMIN DASHBOARD API =================
-apiRouter.get('/admin/stats', (req: Request, res: Response) => {
+apiRouter.get('/admin/stats', async (req: Request, res: Response) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {
+    console.warn('[Admin Stats] syncFromMongo notice:', err);
+  }
+
   const totalUsers = db.users.length;
   const activeContracts = db.miningContracts.filter((c) => c.status === 'active').length;
   const totalDeposits = db.deposits.reduce((sum, d) => (d.status === 'confirmed' ? sum + d.amount : sum), 0);
@@ -1434,7 +1493,7 @@ apiRouter.get('/admin/stats', (req: Request, res: Response) => {
   });
 });
 
-apiRouter.post('/admin/plans', (req: Request, res: Response) => {
+apiRouter.post('/admin/plans', async (req: Request, res: Response) => {
   const { name, description, price, duration, rewardRate } = req.body;
 
   const pPrice = Number(price);
@@ -1459,12 +1518,12 @@ apiRouter.post('/admin/plans', (req: Request, res: Response) => {
   };
 
   db.miningPlans.push(newPlan);
-  db.saveData();
+  await db.saveData();
 
   res.json({ success: true, message: 'New mining plan created successfully', plan: newPlan });
 });
 
-apiRouter.post('/admin/plans/:id', (req: Request, res: Response) => {
+apiRouter.post('/admin/plans/:id', async (req: Request, res: Response) => {
   const plan = db.miningPlans.find((p) => p.id === req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
@@ -1478,12 +1537,130 @@ apiRouter.post('/admin/plans/:id', (req: Request, res: Response) => {
   plan.estimatedTotalReward = Number((plan.estimatedDailyReward * plan.duration).toFixed(2));
   plan.updatedAt = new Date().toISOString();
 
-  db.saveData();
+  await db.saveData();
   res.json({ success: true, message: 'Plan updated successfully', plan });
 });
 
+// Admin: Approve or credit deposit by reference directly
+apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Response) => {
+  const { reference, userId, username, amount, note } = req.body;
+  if (!reference) {
+    return res.status(400).json({ success: false, message: 'Reference is required.' });
+  }
+
+  try {
+    await db.syncFromMongo();
+  } catch (err) {}
+
+  const trimmedRef = reference.trim();
+  let deposit = db.deposits.find((d) => d.reference && d.reference.toLowerCase() === trimmedRef.toLowerCase());
+
+  if (deposit) {
+    if (deposit.status === 'confirmed') {
+      return res.status(400).json({ success: false, message: `Deposit reference ${trimmedRef} is already confirmed.` });
+    }
+    deposit.status = 'confirmed';
+    deposit.confirmations = deposit.requiredConfirmations || 3;
+    deposit.updatedAt = new Date().toISOString();
+
+    const targetUser = db.users.find((u) => u.id === deposit!.userId);
+    if (targetUser) {
+      targetUser.balance = Number((targetUser.balance + deposit.amount).toFixed(2));
+      targetUser.totalDeposits = Number(((targetUser.totalDeposits || 0) + deposit.amount).toFixed(2));
+      targetUser.updatedAt = new Date().toISOString();
+
+      db.transactions.unshift({
+        id: `tx_dep_${Date.now()}`,
+        userId: targetUser.id,
+        type: 'deposit',
+        amount: deposit.amount,
+        currency: deposit.currency || 'GHS',
+        reference: deposit.reference,
+        description: `Admin Verified Deposit: ${deposit.reference}`,
+        status: 'completed',
+        createdAt: new Date().toISOString(),
+      });
+      creditReferralBonus(targetUser, deposit);
+    }
+
+    await db.saveData();
+    return res.json({
+      success: true,
+      message: `Deposit reference ${trimmedRef} approved and credited successfully!`,
+      deposit,
+      user: targetUser,
+    });
+  }
+
+  // If deposit record was not found (e.g. earlier unpersisted instance), create and credit it now!
+  let targetUser = null;
+  if (userId) {
+    targetUser = db.users.find((u) => u.id === userId);
+  }
+  if (!targetUser && username) {
+    targetUser = db.users.find((u) => u.username?.toLowerCase() === username.trim().toLowerCase());
+  }
+  if (!targetUser && db.users.length > 0) {
+    targetUser = db.users[0];
+  }
+
+  if (!targetUser) {
+    return res.status(404).json({
+      success: false,
+      message: `User not found to credit for reference "${trimmedRef}".`,
+    });
+  }
+
+  const depositAmount = Number(amount) || 100;
+  const newDeposit: DepositCloudMineX = {
+    id: `dep_${Date.now()}`,
+    userId: targetUser.id,
+    type: 'mobile_money',
+    provider: 'Mobile Money (Admin Verified)',
+    currency: 'GHS',
+    amount: depositAmount,
+    reference: trimmedRef,
+    status: 'confirmed',
+    confirmations: 3,
+    requiredConfirmations: 3,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  db.deposits.unshift(newDeposit);
+  targetUser.balance = Number((targetUser.balance + depositAmount).toFixed(2));
+  targetUser.totalDeposits = Number(((targetUser.totalDeposits || 0) + depositAmount).toFixed(2));
+  targetUser.updatedAt = new Date().toISOString();
+
+  db.transactions.unshift({
+    id: `tx_dep_${Date.now()}`,
+    userId: targetUser.id,
+    type: 'deposit',
+    amount: depositAmount,
+    currency: 'GHS',
+    reference: trimmedRef,
+    description: note || `Admin Verified Deposit: ${trimmedRef}`,
+    status: 'completed',
+    createdAt: new Date().toISOString(),
+  });
+
+  creditReferralBonus(targetUser, newDeposit);
+  await db.saveData();
+
+  return res.json({
+    success: true,
+    message: `Reference ${trimmedRef} verified & credited with GHS ${depositAmount.toFixed(2)} to ${targetUser.username}!`,
+    deposit: newDeposit,
+    user: targetUser,
+  });
+});
+
 // Admin: Approve Deposit and Credit User Account
-apiRouter.post('/admin/deposits/:id/approve', (req: Request, res: Response) => {
+apiRouter.post('/admin/deposits/:id/approve', async (req: Request, res: Response) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {}
+
   const deposit = db.deposits.find((d) => d.id === req.params.id);
   if (!deposit) return res.status(404).json({ success: false, message: 'Deposit not found' });
 
@@ -1516,19 +1693,23 @@ apiRouter.post('/admin/deposits/:id/approve', (req: Request, res: Response) => {
     creditReferralBonus(user, deposit);
   }
 
-  db.saveData();
+  await db.saveData();
   res.json({ success: true, message: 'Deposit approved and user credited successfully', deposit, user });
 });
 
 // Admin: Reject Deposit
-apiRouter.post('/admin/deposits/:id/reject', (req: Request, res: Response) => {
+apiRouter.post('/admin/deposits/:id/reject', async (req: Request, res: Response) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {}
+
   const deposit = db.deposits.find((d) => d.id === req.params.id);
   if (!deposit) return res.status(404).json({ success: false, message: 'Deposit not found' });
 
   deposit.status = 'rejected';
   deposit.updatedAt = new Date().toISOString();
 
-  db.saveData();
+  await db.saveData();
   res.json({ success: true, message: 'Deposit rejected successfully', deposit });
 });
 

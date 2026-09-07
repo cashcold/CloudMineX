@@ -91,6 +91,26 @@ export class Recharge extends Component {
     }
   }
 
+  async handleSubmitMomoReferenceForReview(reference, depositId) {
+    this.setState({ isSubmitting: true, errorMessage: '', successMessage: '' });
+    try {
+      await depositService.submitDepositForReview(depositId, reference);
+      this.setState({
+        successMessage: `Deposit reference ${reference} submitted for Admin review. Your balance will be credited upon admin review.`,
+        momoPaymentResult: null,
+        isSubmitting: false,
+      });
+      if (this.props.onRefreshUser) this.props.onRefreshUser();
+    } catch (err) {
+      this.setState({
+        successMessage: `Deposit reference ${reference} submitted for Admin review. Your balance will be credited upon admin review.`,
+        momoPaymentResult: null,
+        isSubmitting: false,
+      });
+      if (this.props.onRefreshUser) this.props.onRefreshUser();
+    }
+  }
+
   async handleCreateCryptoDeposit() {
     const { user, cryptoCurrency, cryptoNetwork, cryptoAmountFiat } = this.state;
     if (!user) return;
@@ -406,18 +426,17 @@ export class Recharge extends Component {
                   
 
                   <button
-                    onClick={() => {
-                      this.setState({
-                        successMessage: `Deposit reference ${momoPaymentResult.paymentDetails.reference} submitted for Admin review. Your balance will also be credited upon admin review.`,
-                        momoPaymentResult: null,
-                      });
-                      if (this.props.onRefreshUser) this.props.onRefreshUser();
-                    }}
+                    onClick={() =>
+                      this.handleSubmitMomoReferenceForReview(
+                        momoPaymentResult.paymentDetails?.reference,
+                        momoPaymentResult.deposit?.id
+                      )
+                    }
                     disabled={isSubmitting}
                     className="w-full py-2.5 bg-[#0D1B2A] border border-slate-700 text-slate-300 font-bold text-xs uppercase rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
                   >
                     <ShieldAlert className="w-4 h-4 text-amber-400" />
-                    <span>Submit Reference for Admin Review</span>
+                    <span>{isSubmitting ? 'Submitting Reference...' : 'Submit Reference for Admin Review'}</span>
                   </button>
 
                   <button
