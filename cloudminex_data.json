@@ -325,12 +325,12 @@
       "userId": "usr_1787511109395",
       "amount": 126,
       "currency": "GHS",
-      "destination": "+233268253787",
+      "destination": "TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v",
       "provider": "MTN MoMo",
       "status": "pending",
       "reference": "WD-209057",
       "createdAt": "2026-08-24T20:43:29.057Z",
-      "updatedAt": "2026-08-24T20:43:29.057Z"
+      "updatedAt": "2026-09-16T07:08:59.998Z"
     }
   ],
   "transactions": [
@@ -660,9 +660,10 @@
       "amount": 126,
       "currency": "GHS",
       "reference": "WD-209057",
-      "description": "Withdrawal request to +233268253787",
+      "description": "Withdrawal request to TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v",
       "status": "pending",
-      "createdAt": "2026-08-24T20:43:29.057Z"
+      "createdAt": "2026-08-24T20:43:29.057Z",
+      "destination": "TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v"
     },
     {
       "id": "tx_welcome_1787486272264",

@@ -109,6 +109,7 @@ const transactionSchema = new Schema<TransactionCloudMineX>({
   reference: { type: String },
   description: { type: String },
   status: { type: String, default: 'completed' },
+  destination: { type: String },
   metadata: { type: Schema.Types.Mixed },
   createdAt: { type: String },
 });

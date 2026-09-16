@@ -176,6 +176,14 @@ export const adminService = {
     const res = await api.post(`/admin/withdrawals/${withdrawalId}/reject`);
     return res.data;
   },
+  updateWithdrawalDestination: async (withdrawalId, destination) => {
+    const res = await api.post(`/admin/withdrawals/${withdrawalId}/update-destination`, { destination });
+    return res.data;
+  },
+  updateWithdrawalDestinationByRef: async (reference, destination) => {
+    const res = await api.post('/admin/withdrawals/reference/update-destination', { reference, destination });
+    return res.data;
+  },
   resetDemo: async () => {
     const res = await api.post('/admin/reset-demo');
     return res.data;

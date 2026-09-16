@@ -98,6 +98,7 @@ export interface TransactionCloudMineX {
   reference: string;
   description: string;
   status: 'completed' | 'pending' | 'failed';
+  destination?: string;
   metadata?: any;
   createdAt: string;
 }
@@ -221,6 +222,7 @@ class DBStore {
           this.settings = { ...this.settings, ...parsed.settings };
         }
         this.ensureDefaultPlans();
+        this.reconcileWithdrawalTransactions();
       } else {
         this.seedInitialData();
       }
@@ -373,7 +375,40 @@ class DBStore {
     }
   }
 
+  public reconcileWithdrawalTransactions(): boolean {
+    let modified = false;
+    for (const wd of this.withdrawals) {
+      if (!wd.reference && !wd.id) continue;
+      // Match by reference, or by wd id in tx id
+      const matchedTx = this.transactions.find(
+        (t) =>
+          (wd.reference && t.reference === wd.reference) ||
+          (t.type === 'withdrawal' && t.id.includes(wd.id.replace('wd_', '')))
+      );
+      if (matchedTx && wd.destination) {
+        const isApprovedOrCompleted = wd.status === 'approved' || wd.status === 'completed';
+        const expectedDesc = isApprovedOrCompleted
+          ? `Withdrawal to ${wd.destination}`
+          : `Withdrawal request to ${wd.destination}`;
+        const expectedStatus = isApprovedOrCompleted ? 'completed' : (wd.status === 'rejected' ? 'failed' : 'pending');
+
+        if (
+          matchedTx.description !== expectedDesc ||
+          matchedTx.destination !== wd.destination ||
+          matchedTx.status !== expectedStatus
+        ) {
+          matchedTx.description = expectedDesc;
+          matchedTx.destination = wd.destination;
+          matchedTx.status = expectedStatus as any;
+          modified = true;
+        }
+      }
+    }
+    return modified;
+  }
+
   public async saveData() {
+    this.reconcileWithdrawalTransactions();
     const data = {
       users: this.users,
       miningPlans: this.miningPlans,
@@ -606,9 +641,25 @@ class DBStore {
           reference: t.reference || '',
           description: t.description || '',
           status: t.status || 'completed',
+          destination: t.destination,
           metadata: t.metadata,
           createdAt: t.createdAt || new Date().toISOString(),
         }));
+      }
+
+      // Reconcile and synchronize withdrawal transactions with latest withdrawal addresses
+      const reconciled = this.reconcileWithdrawalTransactions();
+      if (reconciled && isMongoConnected()) {
+        const ops = this.transactions
+          .filter((t) => t.type === 'withdrawal')
+          .map((t) =>
+            TransactionModel.updateOne(
+              { id: t.id },
+              { $set: { description: t.description, destination: t.destination, status: t.status } },
+              { upsert: true }
+            )
+          );
+        Promise.all(ops).catch((err) => console.warn('[DBStore] Notice updating reconciled transactions in Mongo:', err));
       }
 
       const mongoReferrals = await ReferralModel.find().lean();

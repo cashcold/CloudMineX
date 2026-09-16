@@ -145,6 +145,7 @@ var init_dbMongo = __esm({
       reference: { type: String },
       description: { type: String },
       status: { type: String, default: "completed" },
+      destination: { type: String },
       metadata: { type: Schema.Types.Mixed },
       createdAt: { type: String }
     });
@@ -272,6 +273,7 @@ var DBStore = class {
           this.settings = { ...this.settings, ...parsed.settings };
         }
         this.ensureDefaultPlans();
+        this.reconcileWithdrawalTransactions();
       } else {
         this.seedInitialData();
       }
@@ -414,7 +416,29 @@ var DBStore = class {
       this.saveData();
     }
   }
+  reconcileWithdrawalTransactions() {
+    let modified = false;
+    for (const wd of this.withdrawals) {
+      if (!wd.reference && !wd.id) continue;
+      const matchedTx = this.transactions.find(
+        (t) => wd.reference && t.reference === wd.reference || t.type === "withdrawal" && t.id.includes(wd.id.replace("wd_", ""))
+      );
+      if (matchedTx && wd.destination) {
+        const isApprovedOrCompleted = wd.status === "approved" || wd.status === "completed";
+        const expectedDesc = isApprovedOrCompleted ? `Withdrawal to ${wd.destination}` : `Withdrawal request to ${wd.destination}`;
+        const expectedStatus = isApprovedOrCompleted ? "completed" : wd.status === "rejected" ? "failed" : "pending";
+        if (matchedTx.description !== expectedDesc || matchedTx.destination !== wd.destination || matchedTx.status !== expectedStatus) {
+          matchedTx.description = expectedDesc;
+          matchedTx.destination = wd.destination;
+          matchedTx.status = expectedStatus;
+          modified = true;
+        }
+      }
+    }
+    return modified;
+  }
   async saveData() {
+    this.reconcileWithdrawalTransactions();
     const data = {
       users: this.users,
       miningPlans: this.miningPlans,
@@ -613,9 +637,21 @@ var DBStore = class {
           reference: t.reference || "",
           description: t.description || "",
           status: t.status || "completed",
+          destination: t.destination,
           metadata: t.metadata,
           createdAt: t.createdAt || (/* @__PURE__ */ new Date()).toISOString()
         }));
+      }
+      const reconciled = this.reconcileWithdrawalTransactions();
+      if (reconciled && isMongoConnected2()) {
+        const ops = this.transactions.filter((t) => t.type === "withdrawal").map(
+          (t) => TransactionModel2.updateOne(
+            { id: t.id },
+            { $set: { description: t.description, destination: t.destination, status: t.status } },
+            { upsert: true }
+          )
+        );
+        Promise.all(ops).catch((err) => console.warn("[DBStore] Notice updating reconciled transactions in Mongo:", err));
       }
       const mongoReferrals = await ReferralModel2.find().lean();
       if (mongoReferrals && mongoReferrals.length > 0) {
@@ -2336,9 +2372,26 @@ apiRouter.get("/income/:userId", async (req, res) => {
   processMiningYields(userId);
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: "User not found" });
+  db.reconcileWithdrawalTransactions();
   const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === "active");
   const completedContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === "completed");
-  const userTxs = db.transactions.filter((t) => t.userId === userId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const userTxs = db.transactions.filter((t) => t.userId === userId).map((t) => {
+    if (t.type === "withdrawal") {
+      const matchedWd = db.withdrawals.find(
+        (w) => t.reference && w.reference === t.reference || t.id && t.id.includes(w.id.replace("wd_", ""))
+      );
+      if (matchedWd && matchedWd.destination) {
+        const isDone = matchedWd.status === "approved" || matchedWd.status === "completed";
+        return {
+          ...t,
+          destination: matchedWd.destination,
+          description: `${isDone ? "Withdrawal" : "Withdrawal request"} to ${matchedWd.destination}`,
+          status: isDone ? "completed" : matchedWd.status === "rejected" ? "failed" : t.status
+        };
+      }
+    }
+    return t;
+  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const todayEstReward = activeContracts.reduce((sum, c) => sum + c.estimatedDailyReward, 0);
   res.json({
     success: true,
@@ -2795,8 +2848,115 @@ apiRouter.post("/admin/withdrawals/:id/reject", (req, res) => {
   }
   withdrawal.status = "rejected";
   withdrawal.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const tx = db.transactions.find((t) => t.reference === withdrawal.reference);
+  if (tx) tx.status = "failed";
   db.saveData();
   res.json({ success: true, message: "Withdrawal rejected and balance refunded", withdrawal });
+});
+apiRouter.post("/admin/withdrawals/reference/update-destination", async (req, res) => {
+  const { reference, destination } = req.body;
+  if (!reference) return res.status(400).json({ success: false, message: "Withdrawal reference is required" });
+  const withdrawal = db.withdrawals.find((w) => w.reference === reference || w.id === reference);
+  if (!withdrawal) {
+    return res.status(404).json({ success: false, message: `Withdrawal with reference ${reference} not found` });
+  }
+  const trimmedDest = (destination || "").trim();
+  if (!trimmedDest) {
+    return res.status(400).json({ success: false, message: "Please provide a valid destination/wallet address" });
+  }
+  const oldDest = withdrawal.destination;
+  withdrawal.destination = trimmedDest;
+  withdrawal.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const tx = db.transactions.find((t) => t.reference === withdrawal.reference || t.type === "withdrawal" && t.id.includes(withdrawal.id.replace("wd_", "")));
+  if (tx) {
+    const isDone = withdrawal.status === "approved" || withdrawal.status === "completed";
+    tx.description = `${isDone ? "Withdrawal" : "Withdrawal request"} to ${trimmedDest}`;
+    tx.destination = trimmedDest;
+    if (isDone) tx.status = "completed";
+  }
+  const user = db.users.find((u) => u.id === withdrawal.userId);
+  if (user && (user.paymentAddress === oldDest || !user.paymentAddress)) {
+    user.paymentAddress = trimmedDest;
+    user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  }
+  await db.saveData();
+  if (isMongoConnected()) {
+    try {
+      const { WithdrawalModel: WithdrawalModel2, TransactionModel: TransactionModel2, UserModel: UserModel2 } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
+      await WithdrawalModel2.updateOne({ id: withdrawal.id }, { $set: { destination: trimmedDest, updatedAt: withdrawal.updatedAt } });
+      if (tx) {
+        await TransactionModel2.updateOne({ id: tx.id }, { $set: { description: tx.description, destination: trimmedDest, status: tx.status } });
+      }
+      if (user) {
+        await UserModel2.updateOne({ id: user.id }, { $set: { paymentAddress: trimmedDest, updatedAt: user.updatedAt } });
+      }
+    } catch (err) {
+      console.warn("[Admin] Mongo sync notice:", err);
+    }
+  }
+  res.json({
+    success: true,
+    message: `Withdrawal ${reference} destination updated to ${trimmedDest} and ledger synchronized!`,
+    withdrawal,
+    transaction: tx
+  });
+});
+apiRouter.post("/admin/withdrawals/:id/update-destination", async (req, res) => {
+  const { id } = req.params;
+  const { destination } = req.body;
+  if (!destination || typeof destination !== "string" || !destination.trim()) {
+    return res.status(400).json({ success: false, message: "Please provide a valid destination/wallet address" });
+  }
+  const trimmedDest = destination.trim();
+  const withdrawal = db.withdrawals.find((w) => w.id === id || w.reference === id);
+  if (!withdrawal) return res.status(404).json({ success: false, message: "Withdrawal not found" });
+  const oldDest = withdrawal.destination;
+  withdrawal.destination = trimmedDest;
+  withdrawal.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const tx = db.transactions.find(
+    (t) => t.reference === withdrawal.reference || t.type === "withdrawal" && t.id.includes(withdrawal.id.replace("wd_", ""))
+  );
+  if (tx) {
+    const isDone = withdrawal.status === "approved" || withdrawal.status === "completed";
+    tx.description = `${isDone ? "Withdrawal" : "Withdrawal request"} to ${trimmedDest}`;
+    tx.destination = trimmedDest;
+    if (isDone) tx.status = "completed";
+  }
+  const user = db.users.find((u) => u.id === withdrawal.userId);
+  if (user && (user.paymentAddress === oldDest || !user.paymentAddress)) {
+    user.paymentAddress = trimmedDest;
+    user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  }
+  await db.saveData();
+  if (isMongoConnected()) {
+    try {
+      const { WithdrawalModel: WithdrawalModel2, TransactionModel: TransactionModel2, UserModel: UserModel2 } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
+      await WithdrawalModel2.updateOne(
+        { id: withdrawal.id },
+        { $set: { destination: trimmedDest, updatedAt: withdrawal.updatedAt } }
+      );
+      if (tx) {
+        await TransactionModel2.updateOne(
+          { id: tx.id },
+          { $set: { description: tx.description, destination: trimmedDest, status: tx.status } }
+        );
+      }
+      if (user) {
+        await UserModel2.updateOne(
+          { id: user.id },
+          { $set: { paymentAddress: trimmedDest, updatedAt: user.updatedAt } }
+        );
+      }
+    } catch (err) {
+      console.warn("[Admin] Direct Mongo sync error on address update:", err);
+    }
+  }
+  res.json({
+    success: true,
+    message: `Withdrawal wallet address updated to ${trimmedDest} and ledger synchronized successfully!`,
+    withdrawal,
+    transaction: tx
+  });
 });
 apiRouter.get("/chat", (req, res) => {
   res.json({ success: true, messages: db.chatMessages });

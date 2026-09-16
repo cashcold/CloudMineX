@@ -1240,10 +1240,29 @@ apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
+  db.reconcileWithdrawalTransactions();
+
   const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'active');
   const completedContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'completed');
   const userTxs = db.transactions
     .filter((t) => t.userId === userId)
+    .map((t) => {
+      if (t.type === 'withdrawal') {
+        const matchedWd = db.withdrawals.find(
+          (w) => (t.reference && w.reference === t.reference) || (t.id && t.id.includes(w.id.replace('wd_', '')))
+        );
+        if (matchedWd && matchedWd.destination) {
+          const isDone = matchedWd.status === 'approved' || matchedWd.status === 'completed';
+          return {
+            ...t,
+            destination: matchedWd.destination,
+            description: `${isDone ? 'Withdrawal' : 'Withdrawal request'} to ${matchedWd.destination}`,
+            status: isDone ? 'completed' : (matchedWd.status === 'rejected' ? 'failed' : t.status),
+          };
+        }
+      }
+      return t;
+    })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const todayEstReward = activeContracts.reduce((sum, c) => sum + c.estimatedDailyReward, 0);
@@ -1803,8 +1822,138 @@ apiRouter.post('/admin/withdrawals/:id/reject', (req: Request, res: Response) =>
   withdrawal.status = 'rejected';
   withdrawal.updatedAt = new Date().toISOString();
 
+  // Find corresponding transaction
+  const tx = db.transactions.find((t) => t.reference === withdrawal.reference);
+  if (tx) tx.status = 'failed';
+
   db.saveData();
   res.json({ success: true, message: 'Withdrawal rejected and balance refunded', withdrawal });
+});
+
+// Admin: Update Wallet Address / Destination by reference
+apiRouter.post('/admin/withdrawals/reference/update-destination', async (req: Request, res: Response) => {
+  const { reference, destination } = req.body;
+  if (!reference) return res.status(400).json({ success: false, message: 'Withdrawal reference is required' });
+  const withdrawal = db.withdrawals.find((w) => w.reference === reference || w.id === reference);
+  if (!withdrawal) {
+    return res.status(404).json({ success: false, message: `Withdrawal with reference ${reference} not found` });
+  }
+
+  const trimmedDest = (destination || '').trim();
+  if (!trimmedDest) {
+    return res.status(400).json({ success: false, message: 'Please provide a valid destination/wallet address' });
+  }
+
+  const oldDest = withdrawal.destination;
+  withdrawal.destination = trimmedDest;
+  withdrawal.updatedAt = new Date().toISOString();
+
+  // Find corresponding transaction
+  const tx = db.transactions.find((t) => t.reference === withdrawal.reference || (t.type === 'withdrawal' && t.id.includes(withdrawal.id.replace('wd_', ''))));
+  if (tx) {
+    const isDone = withdrawal.status === 'approved' || withdrawal.status === 'completed';
+    tx.description = `${isDone ? 'Withdrawal' : 'Withdrawal request'} to ${trimmedDest}`;
+    tx.destination = trimmedDest;
+    if (isDone) tx.status = 'completed';
+  }
+
+  const user = db.users.find((u) => u.id === withdrawal.userId);
+  if (user && (user.paymentAddress === oldDest || !user.paymentAddress)) {
+    user.paymentAddress = trimmedDest;
+    user.updatedAt = new Date().toISOString();
+  }
+
+  await db.saveData();
+
+  if (isMongoConnected()) {
+    try {
+      const { WithdrawalModel, TransactionModel, UserModel } = await import('../config/dbMongo');
+      await WithdrawalModel.updateOne({ id: withdrawal.id }, { $set: { destination: trimmedDest, updatedAt: withdrawal.updatedAt } });
+      if (tx) {
+        await TransactionModel.updateOne({ id: tx.id }, { $set: { description: tx.description, destination: trimmedDest, status: tx.status } });
+      }
+      if (user) {
+        await UserModel.updateOne({ id: user.id }, { $set: { paymentAddress: trimmedDest, updatedAt: user.updatedAt } });
+      }
+    } catch (err) {
+      console.warn('[Admin] Mongo sync notice:', err);
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Withdrawal ${reference} destination updated to ${trimmedDest} and ledger synchronized!`,
+    withdrawal,
+    transaction: tx,
+  });
+});
+
+// Admin: Update Wallet Address / Destination for a withdrawal & auto-sync ledger by ID
+apiRouter.post('/admin/withdrawals/:id/update-destination', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { destination } = req.body;
+  if (!destination || typeof destination !== 'string' || !destination.trim()) {
+    return res.status(400).json({ success: false, message: 'Please provide a valid destination/wallet address' });
+  }
+
+  const trimmedDest = destination.trim();
+  const withdrawal = db.withdrawals.find((w) => w.id === id || w.reference === id);
+  if (!withdrawal) return res.status(404).json({ success: false, message: 'Withdrawal not found' });
+
+  const oldDest = withdrawal.destination;
+  withdrawal.destination = trimmedDest;
+  withdrawal.updatedAt = new Date().toISOString();
+
+  // Find corresponding transaction
+  const tx = db.transactions.find(
+    (t) => t.reference === withdrawal.reference || (t.type === 'withdrawal' && t.id.includes(withdrawal.id.replace('wd_', '')))
+  );
+  if (tx) {
+    const isDone = withdrawal.status === 'approved' || withdrawal.status === 'completed';
+    tx.description = `${isDone ? 'Withdrawal' : 'Withdrawal request'} to ${trimmedDest}`;
+    tx.destination = trimmedDest;
+    if (isDone) tx.status = 'completed';
+  }
+
+  // Also update user's saved payment address if it was set to old address or unset
+  const user = db.users.find((u) => u.id === withdrawal.userId);
+  if (user && (user.paymentAddress === oldDest || !user.paymentAddress)) {
+    user.paymentAddress = trimmedDest;
+    user.updatedAt = new Date().toISOString();
+  }
+
+  await db.saveData();
+
+  if (isMongoConnected()) {
+    try {
+      const { WithdrawalModel, TransactionModel, UserModel } = await import('../config/dbMongo');
+      await WithdrawalModel.updateOne(
+        { id: withdrawal.id },
+        { $set: { destination: trimmedDest, updatedAt: withdrawal.updatedAt } }
+      );
+      if (tx) {
+        await TransactionModel.updateOne(
+          { id: tx.id },
+          { $set: { description: tx.description, destination: trimmedDest, status: tx.status } }
+        );
+      }
+      if (user) {
+        await UserModel.updateOne(
+          { id: user.id },
+          { $set: { paymentAddress: trimmedDest, updatedAt: user.updatedAt } }
+        );
+      }
+    } catch (err) {
+      console.warn('[Admin] Direct Mongo sync error on address update:', err);
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Withdrawal wallet address updated to ${trimmedDest} and ledger synchronized successfully!`,
+    withdrawal,
+    transaction: tx,
+  });
 });
 
 // ================= COMMUNITY CHAT & PAYMENT CLAIMS =================

@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { ShieldCheck, Users, Cpu, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw, Settings, Save, Check, ArrowLeft, Lock, KeyRound, LogOut, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, Users, Cpu, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw, Settings, Save, Check, ArrowLeft, Lock, KeyRound, LogOut, Eye, EyeOff, Edit2, Wallet, X } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { adminService } from '../services/api';
 
@@ -23,6 +23,10 @@ export class AdminDashboard extends Component {
       quickRef: 'MOMO-1788818884878-4143',
       quickAmount: '100',
       quickUsername: '',
+      editingWdId: null,
+      editWdDestination: '',
+      quickWdRef: 'WD-269663',
+      quickWdDest: 'TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v',
       isSubmitting: false,
       message: '',
       errorMessage: '',
@@ -30,6 +34,85 @@ export class AdminDashboard extends Component {
     this.handleAdminLogin = this.handleAdminLogin.bind(this);
     this.handleAdminLogout = this.handleAdminLogout.bind(this);
     this.handleQuickApproveByReference = this.handleQuickApproveByReference.bind(this);
+    this.handleQuickUpdateWdByRef = this.handleQuickUpdateWdByRef.bind(this);
+    this.startEditingWd = this.startEditingWd.bind(this);
+    this.cancelEditingWd = this.cancelEditingWd.bind(this);
+    this.saveWdDestination = this.saveWdDestination.bind(this);
+  }
+
+  startEditingWd(wd) {
+    this.setState({
+      editingWdId: wd.id,
+      editWdDestination: wd.destination || '',
+      message: '',
+      errorMessage: '',
+    });
+  }
+
+  cancelEditingWd() {
+    this.setState({
+      editingWdId: null,
+      editWdDestination: '',
+    });
+  }
+
+  async saveWdDestination(wdId) {
+    const { editWdDestination } = this.state;
+    if (!editWdDestination || !editWdDestination.trim()) {
+      this.setState({ errorMessage: 'Please enter a valid wallet address / destination.' });
+      return;
+    }
+    this.setState({ isSubmitting: true, errorMessage: '', message: '' });
+    try {
+      const res = await adminService.updateWithdrawalDestination(wdId, editWdDestination.trim());
+      if (res.success) {
+        this.setState({
+          message: res.message || 'Withdrawal wallet address updated & transaction ledger synced!',
+          editingWdId: null,
+          editWdDestination: '',
+          isSubmitting: false,
+        });
+        this.loadAdminStats();
+      } else {
+        this.setState({ errorMessage: res.message || 'Failed to update wallet address', isSubmitting: false });
+      }
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Failed to update wallet address.',
+        isSubmitting: false,
+      });
+    }
+  }
+
+  async handleQuickUpdateWdByRef(e) {
+    if (e) e.preventDefault();
+    const { quickWdRef, quickWdDest } = this.state;
+    if (!quickWdRef || !quickWdRef.trim()) {
+      this.setState({ errorMessage: 'Please enter a withdrawal reference (e.g. WD-269663).' });
+      return;
+    }
+    if (!quickWdDest || !quickWdDest.trim()) {
+      this.setState({ errorMessage: 'Please enter the corrected wallet address.' });
+      return;
+    }
+    this.setState({ isSubmitting: true, errorMessage: '', message: '' });
+    try {
+      const res = await adminService.updateWithdrawalDestinationByRef(quickWdRef.trim(), quickWdDest.trim());
+      if (res.success) {
+        this.setState({
+          message: res.message || `Withdrawal ${quickWdRef} wallet address updated and ledger synchronized!`,
+          isSubmitting: false,
+        });
+        this.loadAdminStats();
+      } else {
+        this.setState({ errorMessage: res.message || 'Failed to update withdrawal', isSubmitting: false });
+      }
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Failed to update withdrawal destination.',
+        isSubmitting: false,
+      });
+    }
   }
 
   componentDidMount() {
@@ -666,69 +749,192 @@ export class AdminDashboard extends Component {
 
         {/* SUB TAB: WITHDRAWALS MANAGEMENT */}
         {activeSubTab === 'WITHDRAWALS' && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">User Withdrawal Requests</h3>
+          <div className="space-y-4">
+            {/* Quick Wallet Address & Ledger Sync Card */}
+            <div className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-3">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-[#00D4A8]" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Quick Wallet Address Correction & Ledger Sync
+                </h3>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                If a user submitted the wrong payout wallet or destination, correct it here. This automatically updates the withdrawal record, the transaction ledger, and cloud storage simultaneously.
+              </p>
+
+              <form onSubmit={this.handleQuickUpdateWdByRef} className="space-y-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-slate-400 font-semibold block mb-1">
+                      Withdrawal Reference (e.g. WD-269663)
+                    </label>
+                    <input
+                      type="text"
+                      value={this.state.quickWdRef}
+                      onChange={(e) => this.setState({ quickWdRef: e.target.value })}
+                      placeholder="WD-269663"
+                      className="w-full bg-[#07111F] border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-mono focus:border-[#00D4A8] outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 font-semibold block mb-1">
+                      Correct Wallet Address / Destination
+                    </label>
+                    <input
+                      type="text"
+                      value={this.state.quickWdDest}
+                      onChange={(e) => this.setState({ quickWdDest: e.target.value })}
+                      placeholder="e.g. TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v"
+                      className="w-full bg-[#07111F] border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-mono focus:border-[#00D4A8] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={this.state.isSubmitting}
+                    className="px-4 py-2 bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-bold text-xs rounded-xl hover:opacity-90 transition-all flex items-center gap-2 shadow"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{this.state.isSubmitting ? 'Syncing...' : 'Update Wallet & Sync Ledger'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">User Withdrawal Requests</h3>
+              <button
+                onClick={() => this.loadAdminStats()}
+                className="px-2.5 py-1 text-[11px] font-bold bg-[#10253A] text-[#00D4A8] border border-slate-800 rounded-lg hover:bg-[#10253A]/80 flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Refresh</span>
+              </button>
+            </div>
+
             {statsData && statsData.withdrawals && statsData.withdrawals.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {statsData.withdrawals.map((wd) => {
                   const wdUser = statsData.users?.find((u) => u.id === wd.userId);
+                  const isEditing = this.state.editingWdId === wd.id;
                   return (
-                    <div key={wd.id} className="bg-[#10253A] p-3.5 rounded-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-white text-xs">{wdUser ? wdUser.username : 'User ' + wd.userId}</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                            wd.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                            wd.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
-                            'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          }`}>
-                            {wd.status}
-                          </span>
+                    <div key={wd.id} className="bg-[#10253A] p-3.5 rounded-xl border border-slate-800 space-y-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-white text-xs">{wdUser ? wdUser.username : 'User ' + wd.userId}</span>
+                            <span className="text-[10px] font-mono text-slate-400 bg-[#07111F] px-1.5 py-0.5 rounded border border-slate-800">
+                              {wd.reference}
+                            </span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                              wd.status === 'approved' || wd.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                              wd.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                              'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            }`}>
+                              {wd.status}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 mt-1 text-[11px]">
+                            <span className="text-[#00D4A8] font-bold">
+                              {formatCurrency(wd.amount, 'GHS')}
+                            </span>
+                            <span className="text-slate-400 text-[10px]">•</span>
+                            <span className="text-slate-400 text-[10px]">{formatDate(wd.createdAt)}</span>
+                          </div>
+
+                          <div className="mt-1 text-[10px] text-slate-300">
+                            <span className="text-slate-400">Destination:</span>{' '}
+                            <span className="font-mono text-[#2DD4FF] break-all select-all font-semibold">
+                              {wd.destination}
+                            </span>{' '}
+                            <span className="text-slate-400">({wd.provider})</span>
+                          </div>
                         </div>
-                        <p className="text-[11px] text-[#00D4A8] font-bold mt-1">
-                          Amount: {formatCurrency(wd.amount, 'GHS')}
-                        </p>
-                        <p className="text-[10px] text-slate-300">
-                          Destination: <span className="font-mono text-white">{wd.destination}</span> ({wd.provider})
-                        </p>
+
+                        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                          {!isEditing && (
+                            <button
+                              onClick={() => this.startEditingWd(wd)}
+                              className="px-2.5 py-1.5 bg-[#07111F] border border-slate-700 hover:border-[#00D4A8] text-slate-300 hover:text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5"
+                              title="Edit wallet destination address"
+                            >
+                              <Edit2 className="w-3 h-3 text-[#00D4A8]" />
+                              <span>Edit Wallet</span>
+                            </button>
+                          )}
+
+                          {(wd.status === 'pending' || wd.status === 'demo-pending') && !isEditing ? (
+                            <>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const res = await adminService.approveWithdrawal(wd.id);
+                                    if (res.success) {
+                                      this.setState({ message: 'Withdrawal approved successfully.' });
+                                      this.loadAdminStats();
+                                    }
+                                  } catch (err) {
+                                    this.setState({ errorMessage: 'Failed to approve withdrawal.' });
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-emerald-500 text-white font-bold text-xs rounded-lg hover:bg-emerald-600 transition-all shadow"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const res = await adminService.rejectWithdrawal(wd.id);
+                                    if (res.success) {
+                                      this.setState({ message: 'Withdrawal rejected and balance refunded.' });
+                                      this.loadAdminStats();
+                                    }
+                                  } catch (err) {
+                                    this.setState({ errorMessage: 'Failed to reject withdrawal.' });
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-rose-500/20 text-rose-400 border border-rose-500/40 font-bold text-xs rounded-lg hover:bg-rose-500/30 transition-all"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
                       </div>
 
-                      {wd.status === 'pending' || wd.status === 'demo-pending' ? (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await adminService.approveWithdrawal(wd.id);
-                                if (res.success) {
-                                  this.setState({ message: 'Withdrawal approved successfully.' });
-                                  this.loadAdminStats();
-                                }
-                              } catch (err) {
-                                this.setState({ errorMessage: 'Failed to approve withdrawal.' });
-                              }
-                            }}
-                            className="px-3 py-1.5 bg-emerald-500 text-white font-bold text-xs rounded-lg hover:bg-emerald-600 transition-all"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await adminService.rejectWithdrawal(wd.id);
-                                if (res.success) {
-                                  this.setState({ message: 'Withdrawal rejected and balance refunded.' });
-                                  this.loadAdminStats();
-                                }
-                              } catch (err) {
-                                this.setState({ errorMessage: 'Failed to reject withdrawal.' });
-                              }
-                            }}
-                            className="px-3 py-1.5 bg-rose-500/20 text-rose-400 border border-rose-500/40 font-bold text-xs rounded-lg hover:bg-rose-500/30 transition-all"
-                          >
-                            Reject
-                          </button>
+                      {/* Inline Edit Wallet Box */}
+                      {isEditing && (
+                        <div className="mt-2 pt-2.5 border-t border-slate-800/80 bg-[#07111F]/60 p-3 rounded-lg flex flex-col sm:flex-row items-center gap-2">
+                          <input
+                            type="text"
+                            value={this.state.editWdDestination}
+                            onChange={(e) => this.setState({ editWdDestination: e.target.value })}
+                            placeholder="Enter correct wallet address..."
+                            className="w-full bg-[#07111F] border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono focus:border-[#00D4A8] outline-none"
+                          />
+                          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                            <button
+                              onClick={() => this.saveWdDestination(wd.id)}
+                              disabled={this.state.isSubmitting}
+                              className="px-3 py-1.5 bg-[#00D4A8] text-[#07111F] font-bold text-xs rounded-lg hover:opacity-90 transition-all flex items-center gap-1 shadow"
+                            >
+                              <Save className="w-3 h-3" />
+                              <span>{this.state.isSubmitting ? 'Saving...' : 'Save & Sync'}</span>
+                            </button>
+                            <button
+                              onClick={this.cancelEditingWd}
+                              disabled={this.state.isSubmitting}
+                              className="px-2.5 py-1.5 bg-slate-800 text-slate-300 hover:text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>Cancel</span>
+                            </button>
+                          </div>
                         </div>
-                      ) : null}
+                      )}
                     </div>
                   );
                 })}

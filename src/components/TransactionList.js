@@ -86,17 +86,17 @@ export class TransactionList extends Component {
                   <div className="w-8 h-8 rounded-lg bg-[#07111F] border border-[#10253A] flex items-center justify-center">
                     {getIcon(tx.type)}
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-white leading-tight">{tx.description}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-[#94A3B8] font-mono">{tx.reference}</span>
-                      <span className="text-[10px] text-[#94A3B8]/50">•</span>
-                      <span className="text-[10px] text-[#94A3B8]">{formatDate(tx.createdAt)}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-white leading-snug break-all">{tx.description}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] text-[#94A3B8] font-mono shrink-0">{tx.reference}</span>
+                      <span className="text-[10px] text-[#94A3B8]/50 shrink-0">•</span>
+                      <span className="text-[10px] text-[#94A3B8] shrink-0">{formatDate(tx.createdAt)}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="text-right">
+                <div className="text-right shrink-0 ml-3">
                   <p
                     className={`text-xs font-bold font-mono ${
                       tx.type === 'deposit' || tx.type === 'mining_reward' || tx.type === 'referral_reward'
@@ -107,7 +107,15 @@ export class TransactionList extends Component {
                     {tx.type === 'deposit' || tx.type === 'mining_reward' || tx.type === 'referral_reward' ? '+' : '-'}
                     {formatCurrency(tx.amount, tx.currency || 'GHS')}
                   </p>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#07111F] text-[#94A3B8] font-medium uppercase tracking-wider border border-[#10253A]">
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wider border ${
+                      tx.status === 'completed' || tx.status === 'approved'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : tx.status === 'failed' || tx.status === 'rejected'
+                        ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                        : 'bg-[#07111F] text-amber-400 border-amber-500/30'
+                    }`}
+                  >
                     {tx.status}
                   </span>
                 </div>
