@@ -200,6 +200,18 @@ export const adminService = {
     const res = await api.post('/admin/reset-demo');
     return res.data;
   },
+  testTelegram: async (chatId) => {
+    const res = await api.post('/admin/telegram/test', { chatId });
+    return res.data;
+  },
+  getTelegramStatus: async () => {
+    const res = await api.get('/admin/telegram/status');
+    return res.data;
+  },
+  updateTelegramConfig: async (config) => {
+    const res = await api.post('/admin/telegram/config', config);
+    return res.data;
+  },
 };
 
 export const chatService = {

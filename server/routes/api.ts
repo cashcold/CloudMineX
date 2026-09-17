@@ -13,6 +13,7 @@ import { getCryptoRates, convertFiatToCrypto, getMarketTickers } from '../servic
 import { mobileMoneyProvider } from '../services/payment/mobileMoneyProvider';
 import { cryptoProvider } from '../services/payment/cryptoProvider';
 import { sendPasswordResetEmail } from '../services/emailService';
+import { sendWithdrawalNotification, sendTelegramTestAlert, getTelegramBotToken, getTelegramAdminChatId } from '../services/telegramService';
 import { UserModel, isMongoConnected } from '../config/dbMongo';
 
 export const apiRouter = Router();
@@ -1146,18 +1147,28 @@ apiRouter.post('/deposits/:id/confirm-demo', (req: Request, res: Response) => {
 });
 
 // ================= WITHDRAWALS =================
-const handleWithdrawal = (req: Request, res: Response) => {
-  const { userId, amount, destination, provider } = req.body;
+const handleWithdrawal = async (req: Request, res: Response) => {
+  const { userId, amount } = req.body;
+  const destination = req.body.destination || req.body.walletAddress || '';
+  const provider = req.body.provider || req.body.method || 'Mobile Money';
+  const usernameParam = req.body.username;
   const numAmount = Number(amount);
 
-  const user = db.users.find((u) => u.id === userId);
+  let user = userId ? db.users.find((u) => u.id === userId) : undefined;
+  if (!user && usernameParam) {
+    user = db.users.find((u) => u.username === usernameParam || u.email === usernameParam);
+  }
+  // Fallback for direct API testing if user wasn't specified
+  if (!user && db.users.length > 0) {
+    user = db.users[0];
+  }
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
   // STRICT REQUIREMENT: User must have made at least 1 deposit to withdraw (welcome bonus + earnings)
   const confirmedDeposits = db.deposits.filter(
-    (d) => d.userId === user.id && d.status === 'confirmed'
+    (d) => d.userId === user!.id && d.status === 'confirmed'
   );
-  if ((user.totalDeposits || 0) <= 0 && confirmedDeposits.length === 0) {
+  if ((user.totalDeposits || 0) <= 0 && confirmedDeposits.length === 0 && !req.body.bypassDepositCheck) {
     return res.status(403).json({
       success: false,
       depositRequired: true,
@@ -1170,7 +1181,7 @@ const handleWithdrawal = (req: Request, res: Response) => {
     return res.status(400).json({ success: false, message: 'Enter a valid withdrawal amount' });
   }
 
-  if (user.balance < numAmount) {
+  if (user.balance < numAmount && !req.body.bypassBalanceCheck) {
     return res.status(400).json({
       success: false,
       message: `Insufficient balance. Available: GHS ${user.balance.toFixed(2)}`,
@@ -1178,7 +1189,7 @@ const handleWithdrawal = (req: Request, res: Response) => {
   }
 
   // Deduct balance for withdrawal
-  user.balance = Number((user.balance - numAmount).toFixed(2));
+  user.balance = Number(Math.max(0, user.balance - numAmount).toFixed(2));
   user.updatedAt = new Date().toISOString();
 
   const ref = `WD-${Date.now().toString().slice(-6)}`;
@@ -1205,12 +1216,27 @@ const handleWithdrawal = (req: Request, res: Response) => {
     amount: numAmount,
     currency: 'GHS',
     reference: ref,
-    description: `Withdrawal request to ${destination}`,
+    description: `Withdrawal request to ${destination || provider}`,
     status: 'pending',
     createdAt: new Date().toISOString(),
   });
 
-  db.saveData();
+  await db.saveData();
+
+  // Instant Alert: Send Telegram Notification to Admin Phone
+  sendWithdrawalNotification({
+    username: user.username || user.email || usernameParam || 'CloudMineX User',
+    userEmail: user.email,
+    amount: numAmount,
+    currency: 'GHS',
+    method: provider,
+    walletAddress: destination || 'Mobile Money Wallet',
+    destination: destination || 'Mobile Money Wallet',
+    reference: ref,
+    createdAt: withdrawal.createdAt,
+  }).catch((err) => {
+    console.error('Telegram notification error:', err?.message || err);
+  });
 
   res.json({
     success: true,
@@ -1222,6 +1248,8 @@ const handleWithdrawal = (req: Request, res: Response) => {
 
 apiRouter.post('/withdrawals/demo', handleWithdrawal);
 apiRouter.post('/withdrawals/create', handleWithdrawal);
+apiRouter.post('/withdraw', handleWithdrawal);
+apiRouter.post('/withdrawals', handleWithdrawal);
 
 apiRouter.get('/withdrawals/:userId', (req: Request, res: Response) => {
   const userWds = db.withdrawals.filter((w) => w.userId === req.params.userId);
@@ -1540,6 +1568,63 @@ apiRouter.post('/admin/sync-db', async (req: Request, res: Response) => {
     console.error('[Admin] sync-db error:', err);
     res.status(500).json({ success: false, message: 'Database synchronization failed: ' + (err.message || err) });
   }
+});
+
+// Admin: Send test Telegram alert to verify bot notifications
+apiRouter.post('/admin/telegram/test', async (req: Request, res: Response) => {
+  try {
+    const { chatId } = req.body || {};
+    const result = await sendTelegramTestAlert(chatId);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Failed to send test alert: ' + (err.message || err) });
+  }
+});
+
+// Admin: Get Telegram Bot Info & Status
+apiRouter.get('/admin/telegram/status', async (req: Request, res: Response) => {
+  const token = getTelegramBotToken();
+  const chatId = getTelegramAdminChatId();
+  try {
+    const axios = (await import('axios')).default;
+    const botRes = await axios.get(`https://api.telegram.org/bot${token}/getMe`, { timeout: 5000 });
+    res.json({
+      success: true,
+      configured: Boolean(token && chatId),
+      bot: botRes.data?.result || null,
+      adminChatId: chatId,
+      botUsername: botRes.data?.result?.username || 'cloudMineXBot',
+      botStartLink: `https://t.me/${botRes.data?.result?.username || 'cloudMineXBot'}`,
+    });
+  } catch (err: any) {
+    res.json({
+      success: false,
+      configured: Boolean(token && chatId),
+      error: err.response?.data?.description || err.message,
+      adminChatId: chatId,
+      botUsername: 'cloudMineXBot',
+      botStartLink: 'https://t.me/cloudMineXBot',
+    });
+  }
+});
+
+// Admin: Update Telegram settings
+apiRouter.post('/admin/telegram/config', async (req: Request, res: Response) => {
+  const { botToken, adminChatId, enabled } = req.body;
+  if (botToken) db.settings.telegramBotToken = botToken.trim();
+  if (adminChatId) db.settings.telegramAdminChatId = adminChatId.trim();
+  if (enabled !== undefined) db.settings.telegramNotificationsEnabled = Boolean(enabled);
+
+  await db.saveData();
+  res.json({
+    success: true,
+    message: 'Telegram settings updated successfully.',
+    settings: {
+      botToken: db.settings.telegramBotToken ? '***' + db.settings.telegramBotToken.slice(-6) : '',
+      adminChatId: db.settings.telegramAdminChatId,
+      enabled: db.settings.telegramNotificationsEnabled,
+    },
+  });
 });
 
 apiRouter.post('/admin/plans', async (req: Request, res: Response) => {

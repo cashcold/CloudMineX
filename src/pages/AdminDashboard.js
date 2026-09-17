@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { ShieldCheck, Users, Cpu, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw, Settings, Save, Check, ArrowLeft, Lock, KeyRound, LogOut, Eye, EyeOff, Edit2, Wallet, X, Trash2, DollarSign, Database } from 'lucide-react';
+import { ShieldCheck, Users, Cpu, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw, Settings, Save, Check, ArrowLeft, Lock, KeyRound, LogOut, Eye, EyeOff, Edit2, Wallet, X, Trash2, DollarSign, Database, Bell, Send, ExternalLink } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { adminService } from '../services/api';
 
@@ -28,6 +28,7 @@ export class AdminDashboard extends Component {
       editingWdAmountId: null,
       editWdAmountValue: '',
       isSyncingDb: false,
+      isSendingTestTelegram: false,
       quickWdRef: 'WD-269663',
       quickWdDest: 'TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v',
       isSubmitting: false,
@@ -46,6 +47,7 @@ export class AdminDashboard extends Component {
     this.saveWdAmount = this.saveWdAmount.bind(this);
     this.handleDeleteWithdrawal = this.handleDeleteWithdrawal.bind(this);
     this.handleForceSyncDb = this.handleForceSyncDb.bind(this);
+    this.handleTestTelegram = this.handleTestTelegram.bind(this);
   }
 
   startEditingWd(wd) {
@@ -149,6 +151,29 @@ export class AdminDashboard extends Component {
       this.setState({
         errorMessage: err.response?.data?.message || 'Database synchronization failed.',
         isSyncingDb: false,
+      });
+    }
+  }
+
+  async handleTestTelegram() {
+    this.setState({ isSendingTestTelegram: true, message: '', errorMessage: '' });
+    try {
+      const res = await adminService.testTelegram();
+      if (res.success) {
+        this.setState({
+          message: res.message || 'Telegram test alert sent successfully! Check your phone on Telegram.',
+          isSendingTestTelegram: false,
+        });
+      } else {
+        this.setState({
+          errorMessage: res.message || 'Failed to send Telegram test alert. Make sure you opened @cloudMineXBot and tapped Start.',
+          isSendingTestTelegram: false,
+        });
+      }
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Telegram test failed. Please make sure you have started the bot @cloudMineXBot on Telegram.',
+        isSendingTestTelegram: false,
       });
     }
   }
@@ -902,7 +927,16 @@ export class AdminDashboard extends Component {
 
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">User Withdrawal Requests</h3>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={this.handleTestTelegram}
+                  disabled={this.state.isSendingTestTelegram}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-[#0088cc]/15 text-[#29b6f6] border border-[#0088cc]/40 rounded-lg hover:bg-[#0088cc]/25 flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+                  title="Send a test withdrawal notification to your phone via Telegram"
+                >
+                  <Bell className="w-3 h-3" />
+                  <span>{this.state.isSendingTestTelegram ? 'Testing Telegram...' : 'Test Telegram Alert'}</span>
+                </button>
                 <button
                   onClick={this.handleForceSyncDb}
                   disabled={this.state.isSyncingDb}
@@ -1126,27 +1160,92 @@ export class AdminDashboard extends Component {
 
         {/* SUB TAB 3: APP SETTINGS */}
         {activeSubTab === 'SETTINGS' && statsData && statsData.settings && (
-          <div className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-3 text-xs">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Configured Payment Addresses</h3>
+          <div className="space-y-4">
+            {/* Telegram Instant Alerts Card */}
+            <div className="bg-[#10253A] p-4.5 rounded-2xl border border-slate-800 space-y-3.5 text-xs">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-[#0088cc]/20 border border-[#0088cc]/40 flex items-center justify-center text-[#29b6f6]">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Telegram Withdrawal Alerts</h3>
+                    <p className="text-[10px] text-slate-400">Instant push notifications to your phone when users withdraw</p>
+                  </div>
+                </div>
 
-            <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase">BTC Address</p>
-              <p className="font-mono text-[#00D4A8]">{statsData.settings.btcAddress}</p>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#00D4A8]/10 text-[#00D4A8] border border-[#00D4A8]/30 flex items-center gap-1">
+                  <Check className="w-2.5 h-2.5" />
+                  <span>Configured & Active</span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="bg-[#07111F] p-3 rounded-xl border border-slate-800/80">
+                  <p className="text-[10px] text-slate-400 font-semibold uppercase">Telegram Bot</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="font-mono text-[#00D4A8] font-bold">@cloudMineXBot</span>
+                    <a
+                      href="https://t.me/cloudMineXBot"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-[#29b6f6] hover:underline flex items-center gap-1 font-bold"
+                    >
+                      <span>Open Bot</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+
+                <div className="bg-[#07111F] p-3 rounded-xl border border-slate-800/80">
+                  <p className="text-[10px] text-slate-400 font-semibold uppercase">Admin Chat ID</p>
+                  <p className="font-mono text-white font-bold mt-1">
+                    {statsData.settings.telegramAdminChatId || '6336803190'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-[#07111F]/70 border border-slate-800/70 rounded-xl space-y-2">
+                <p className="text-[11px] text-slate-300">
+                  💡 <strong className="text-white">Note for first-time delivery:</strong> On Telegram, bots cannot send messages to a user until you open the bot and tap <strong className="text-[#00D4A8]">Start</strong>. If you haven't yet, open <a href="https://t.me/cloudMineXBot" target="_blank" rel="noopener noreferrer" className="text-[#29b6f6] underline font-bold">@cloudMineXBot</a> and tap Start.
+                </p>
+
+                <div className="pt-1 flex items-center gap-2">
+                  <button
+                    onClick={this.handleTestTelegram}
+                    disabled={this.state.isSendingTestTelegram}
+                    className="px-3.5 py-1.5 bg-[#0088cc] hover:bg-[#0088cc]/80 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow disabled:opacity-50"
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>{this.state.isSendingTestTelegram ? 'Sending Test...' : 'Send Test Notification to Phone'}</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase">ETH Address</p>
-              <p className="font-mono text-[#00D4A8]">{statsData.settings.ethAddress}</p>
-            </div>
+            {/* Payment Addresses Card */}
+            <div className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-3 text-xs">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Configured Payment Addresses</h3>
 
-            <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase">USDT TRC-20 Address</p>
-              <p className="font-mono text-[#00D4A8]">{statsData.settings.usdtTrc20Address}</p>
-            </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">BTC Address</p>
+                <p className="font-mono text-[#00D4A8]">{statsData.settings.btcAddress}</p>
+              </div>
 
-            <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase">MTN MoMo Merchant</p>
-              <p className="font-bold text-white">{statsData.settings.mtnMerchantName} ({statsData.settings.mtnMerchantNumber})</p>
+              <div>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">ETH Address</p>
+                <p className="font-mono text-[#00D4A8]">{statsData.settings.ethAddress}</p>
+              </div>
+
+              <div>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">USDT TRC-20 Address</p>
+                <p className="font-mono text-[#00D4A8]">{statsData.settings.usdtTrc20Address}</p>
+              </div>
+
+              <div>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">MTN MoMo Merchant</p>
+                <p className="font-bold text-white">{statsData.settings.mtnMerchantName} ({statsData.settings.mtnMerchantNumber})</p>
+              </div>
             </div>
           </div>
         )}

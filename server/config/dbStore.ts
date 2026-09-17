@@ -145,6 +145,9 @@ export interface AppSettingsCloudMineX {
   vodafoneAccountName?: string;
   vodafoneWalletType?: string;
   referralBonusPercent: number;
+  telegramBotToken?: string;
+  telegramAdminChatId?: string;
+  telegramNotificationsEnabled?: boolean;
 }
 
 // Aliases for compatibility
@@ -193,6 +196,9 @@ class DBStore {
     vodafoneAccountName: 'Charles Asumah',
     vodafoneWalletType: 'Vodafone Cash',
     referralBonusPercent: 7,
+    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '8755123580:AAHFP1Zr-YUivo1Mm9iy-wavlXambFTM0rY',
+    telegramAdminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '6336803190',
+    telegramNotificationsEnabled: true,
   };
 
   constructor() {
@@ -219,7 +225,13 @@ class DBStore {
         this.referrals = parsed.referrals || [];
         this.chatMessages = parsed.chatMessages || [];
         if (parsed.settings) {
-          this.settings = { ...this.settings, ...parsed.settings };
+          this.settings = {
+            ...this.settings,
+            ...parsed.settings,
+            telegramBotToken: parsed.settings.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || '8755123580:AAHFP1Zr-YUivo1Mm9iy-wavlXambFTM0rY',
+            telegramAdminChatId: parsed.settings.telegramAdminChatId || process.env.TELEGRAM_ADMIN_CHAT_ID || '6336803190',
+            telegramNotificationsEnabled: parsed.settings.telegramNotificationsEnabled !== undefined ? parsed.settings.telegramNotificationsEnabled : true,
+          };
         }
         this.ensureDefaultPlans();
         this.reconcileWithdrawalTransactions();

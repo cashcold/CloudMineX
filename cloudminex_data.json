@@ -3,7 +3,7 @@
     {
       "id": "usr_demo_101",
       "username": "demoUser",
-      "balance": 1150,
+      "balance": 1140,
       "totalDeposits": 100,
       "currency": "GHS",
       "referralCode": "CMX-7892",
@@ -11,7 +11,7 @@
       "totalRewards": 175.5,
       "activeContracts": 0,
       "createdAt": "2026-08-03T15:56:11.686Z",
-      "updatedAt": "2026-09-07T22:15:48.158Z"
+      "updatedAt": "2026-09-17T17:57:20.449Z"
     },
     {
       "id": "usr_1787511109395",
@@ -944,6 +944,9 @@
     "vodafoneAccountName": "Charles Asumah",
     "vodafoneWalletType": "Vodafone Cash",
     "referralBonusPercent": 7,
+    "telegramBotToken": "8755123580:AAHFP1Zr-YUivo1Mm9iy-wavlXambFTM0rY",
+    "telegramAdminChatId": "6336803190",
+    "telegramNotificationsEnabled": true,
     "$setOnInsert": {
       "__v": 0
     },
