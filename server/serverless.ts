@@ -58,18 +58,28 @@ app.use((req, res, next) => {
 // Throttled background processor for serverless environments
 let isInitialized = false;
 let lastYieldProcessingTime = 0;
+let lastMongoSyncTime = 0;
 const YIELD_PROCESSING_COOLDOWN = 60 * 1000; // 60 seconds
+const MONGO_SYNC_COOLDOWN = 10 * 1000; // 10 seconds
 
 async function ensureServerlessInit() {
+  const now = Date.now();
   if (!isInitialized) {
     const connected = await connectMongoDB();
     if (connected) {
       await db.syncFromMongo();
+      lastMongoSyncTime = now;
     }
     isInitialized = true;
+  } else if (now - lastMongoSyncTime > MONGO_SYNC_COOLDOWN) {
+    lastMongoSyncTime = now;
+    try {
+      await db.syncFromMongo();
+    } catch (err) {
+      console.warn('[Vercel Serverless] Periodic mongo sync warning:', err);
+    }
   }
 
-  const now = Date.now();
   if (now - lastYieldProcessingTime > YIELD_PROCESSING_COOLDOWN) {
     lastYieldProcessingTime = now;
     try {

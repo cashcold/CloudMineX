@@ -1488,6 +1488,7 @@ apiRouter.get('/admin/stats', async (req: Request, res: Response) => {
   } catch (err) {
     console.warn('[Admin Stats] syncFromMongo notice:', err);
   }
+  db.cleanupSpecificRecords();
 
   const totalUsers = db.users.length;
   const activeContracts = db.miningContracts.filter((c) => c.status === 'active').length;
@@ -1510,6 +1511,35 @@ apiRouter.get('/admin/stats', async (req: Request, res: Response) => {
     withdrawals: db.withdrawals,
     settings: db.settings,
   });
+});
+
+// Admin: Force immediate synchronization with MongoDB
+apiRouter.post('/admin/sync-db', async (req: Request, res: Response) => {
+  try {
+    const { connectMongoDB, isMongoConnected } = await import('../config/dbMongo');
+    let connected = isMongoConnected();
+    if (!connected) {
+      connected = await connectMongoDB();
+    }
+
+    await db.syncFromMongo();
+    db.cleanupSpecificRecords();
+    await db.saveData();
+
+    res.json({
+      success: true,
+      connected,
+      message: connected
+        ? `Successfully synchronized with MongoDB database (${db.withdrawals.length} withdrawals active)`
+        : `Synchronized local persistent store (${db.withdrawals.length} withdrawals active)`,
+      withdrawals: db.withdrawals,
+      deposits: db.deposits,
+      users: db.users,
+    });
+  } catch (err: any) {
+    console.error('[Admin] sync-db error:', err);
+    res.status(500).json({ success: false, message: 'Database synchronization failed: ' + (err.message || err) });
+  }
 });
 
 apiRouter.post('/admin/plans', async (req: Request, res: Response) => {
@@ -1951,6 +1981,76 @@ apiRouter.post('/admin/withdrawals/:id/update-destination', async (req: Request,
   res.json({
     success: true,
     message: `Withdrawal wallet address updated to ${trimmedDest} and ledger synchronized successfully!`,
+    withdrawal,
+    transaction: tx,
+  });
+});
+
+// Admin: Delete a withdrawal and purge it permanently across local store and MongoDB
+apiRouter.post('/admin/withdrawals/:id/delete', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const target = db.withdrawals.find((w) => w.id === id || w.reference === id);
+
+  const refOrId = target ? target.reference || target.id : id;
+
+  // Remove from local in-memory lists
+  db.withdrawals = db.withdrawals.filter(
+    (w) => w.id !== id && w.reference !== id && (target ? w.id !== target.id && w.reference !== target.reference : true)
+  );
+  db.transactions = db.transactions.filter(
+    (t) =>
+      t.reference !== refOrId &&
+      !t.id.includes(id.replace('wd_', '')) &&
+      (target ? t.reference !== target.reference && !t.id.includes(target.id.replace('wd_', '')) : true)
+  );
+
+  await db.saveData();
+
+  // Purge from MongoDB
+  const { deleteWithdrawalFromMongo } = await import('../config/dbMongo');
+  await deleteWithdrawalFromMongo(refOrId);
+
+  res.json({
+    success: true,
+    message: `Withdrawal ${refOrId} has been permanently deleted from dashboard and database.`,
+  });
+});
+
+// Admin: Update amount of a withdrawal and synchronize ledger & MongoDB
+apiRouter.post('/admin/withdrawals/:id/update-amount', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { amount } = req.body;
+
+  const parsedAmount = Number(amount);
+  if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    return res.status(400).json({ success: false, message: 'Please provide a valid positive amount.' });
+  }
+
+  const withdrawal = db.withdrawals.find((w) => w.id === id || w.reference === id);
+  if (!withdrawal) {
+    return res.status(404).json({ success: false, message: 'Withdrawal not found.' });
+  }
+
+  withdrawal.amount = parsedAmount;
+  withdrawal.updatedAt = new Date().toISOString();
+
+  // Update corresponding transaction in ledger
+  const tx = db.transactions.find(
+    (t) => t.reference === withdrawal.reference || (t.type === 'withdrawal' && t.id.includes(withdrawal.id.replace('wd_', '')))
+  );
+  if (tx) {
+    tx.amount = parsedAmount;
+  }
+
+  await db.saveData();
+
+  // Update in MongoDB
+  const { updateWithdrawalAmountInMongo } = await import('../config/dbMongo');
+  await updateWithdrawalAmountInMongo(withdrawal.reference || withdrawal.id, parsedAmount);
+
+  res.json({
+    success: true,
+    message: `Withdrawal ${withdrawal.reference || withdrawal.id} amount updated to GHS ${parsedAmount.toFixed(2)}.`,
     withdrawal,
     transaction: tx,
   });

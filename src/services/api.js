@@ -184,6 +184,18 @@ export const adminService = {
     const res = await api.post('/admin/withdrawals/reference/update-destination', { reference, destination });
     return res.data;
   },
+  deleteWithdrawal: async (withdrawalId) => {
+    const res = await api.post(`/admin/withdrawals/${withdrawalId}/delete`);
+    return res.data;
+  },
+  updateWithdrawalAmount: async (withdrawalId, amount) => {
+    const res = await api.post(`/admin/withdrawals/${withdrawalId}/update-amount`, { amount });
+    return res.data;
+  },
+  syncDatabase: async () => {
+    const res = await api.post('/admin/sync-db');
+    return res.data;
+  },
   resetDemo: async () => {
     const res = await api.post('/admin/reset-demo');
     return res.data;

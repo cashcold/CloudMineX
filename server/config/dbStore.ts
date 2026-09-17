@@ -375,8 +375,39 @@ class DBStore {
     }
   }
 
+  public cleanupSpecificRecords() {
+    // 1. Permanently purge deleted withdrawal WD-057295 and any associated transactions
+    this.withdrawals = this.withdrawals.filter(
+      (w) => w.reference !== 'WD-057295' && w.id !== 'WD-057295' && !(typeof w.id === 'string' && w.id.includes('057295'))
+    );
+    this.transactions = this.transactions.filter(
+      (t) => t.reference !== 'WD-057295' && !(typeof t.id === 'string' && t.id.includes('057295')) && !(t.description && t.description.includes('057295'))
+    );
+
+    // 2. Ensure updated withdrawal WD-215628 amount is set to GHS 65.00
+    for (const w of this.withdrawals) {
+      if (w.reference === 'WD-215628' || w.id === 'WD-215628' || (typeof w.id === 'string' && w.id.includes('215628'))) {
+        w.amount = 65.00;
+        w.destination = '0597126658';
+        w.provider = 'MTN MoMo';
+      }
+    }
+    for (const t of this.transactions) {
+      if (t.reference === 'WD-215628' || (typeof t.id === 'string' && t.id.includes('215628'))) {
+        t.amount = 65.00;
+        t.destination = '0597126658';
+      }
+    }
+  }
+
   public reconcileWithdrawalTransactions(): boolean {
+    this.cleanupSpecificRecords();
     let modified = false;
+
+    // Remove any leftover transactions for deleted withdrawals
+    const activeRefs = new Set(this.withdrawals.map((w) => w.reference).filter(Boolean));
+    const activeIds = new Set(this.withdrawals.map((w) => w.id).filter(Boolean));
+
     for (const wd of this.withdrawals) {
       if (!wd.reference && !wd.id) continue;
       // Match by reference, or by wd id in tx id
@@ -395,11 +426,13 @@ class DBStore {
         if (
           matchedTx.description !== expectedDesc ||
           matchedTx.destination !== wd.destination ||
-          matchedTx.status !== expectedStatus
+          matchedTx.status !== expectedStatus ||
+          matchedTx.amount !== wd.amount
         ) {
           matchedTx.description = expectedDesc;
           matchedTx.destination = wd.destination;
           matchedTx.status = expectedStatus as any;
+          matchedTx.amount = wd.amount;
           modified = true;
         }
       }
@@ -482,6 +515,10 @@ class DBStore {
       }
 
       // Upsert withdrawals
+      this.cleanupSpecificRecords();
+      const { deleteWithdrawalFromMongo } = await import('./dbMongo');
+      deleteWithdrawalFromMongo('WD-057295').catch(() => {});
+
       if (this.withdrawals.length > 0) {
         ops.push(...this.withdrawals.map((w) => WithdrawalModel.updateOne({ id: w.id }, { $set: w }, { upsert: true })));
       }
@@ -513,7 +550,9 @@ class DBStore {
   public async syncFromMongo() {
     try {
       const {
+        connectMongoDB,
         isMongoConnected,
+        getUnifiedMongoWithdrawals,
         UserModel,
         MiningPlanModel,
         MiningContractModel,
@@ -525,7 +564,15 @@ class DBStore {
         AppSettingsModel,
       } = await import('./dbMongo');
 
-      if (!isMongoConnected()) return;
+      let connected = isMongoConnected();
+      if (!connected) {
+        connected = await connectMongoDB();
+      }
+
+      if (!connected) {
+        this.cleanupSpecificRecords();
+        return;
+      }
 
       const mongoUsers = await UserModel.find().lean();
       if (mongoUsers) {
@@ -592,21 +639,12 @@ class DBStore {
         }));
       }
 
-      const mongoWithdrawals = await WithdrawalModel.find().lean();
-      if (mongoWithdrawals) {
-        this.withdrawals = mongoWithdrawals.map((w: any) => ({
-          id: w.id,
-          userId: w.userId,
-          amount: w.amount,
-          currency: w.currency || 'GHS',
-          destination: w.destination,
-          provider: w.provider,
-          reference: w.reference,
-          status: w.status,
-          createdAt: w.createdAt || new Date().toISOString(),
-          updatedAt: w.updatedAt || new Date().toISOString(),
-        }));
+      // Fetch unified withdrawals across MongoDB collections (respecting direct MongoDB updates & deletions)
+      const mongoWithdrawals = await getUnifiedMongoWithdrawals();
+      if (mongoWithdrawals && mongoWithdrawals.length > 0) {
+        this.withdrawals = mongoWithdrawals;
       }
+      this.cleanupSpecificRecords();
 
       const mongoContracts = await MiningContractModel.find().lean();
       if (mongoContracts && mongoContracts.length > 0) {
@@ -655,7 +693,7 @@ class DBStore {
           .map((t) =>
             TransactionModel.updateOne(
               { id: t.id },
-              { $set: { description: t.description, destination: t.destination, status: t.status } },
+              { $set: { description: t.description, destination: t.destination, status: t.status, amount: t.amount } },
               { upsert: true }
             )
           );

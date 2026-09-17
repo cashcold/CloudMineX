@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { ShieldCheck, Users, Cpu, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw, Settings, Save, Check, ArrowLeft, Lock, KeyRound, LogOut, Eye, EyeOff, Edit2, Wallet, X } from 'lucide-react';
+import { ShieldCheck, Users, Cpu, ArrowDownLeft, ArrowUpRight, Plus, RefreshCw, Settings, Save, Check, ArrowLeft, Lock, KeyRound, LogOut, Eye, EyeOff, Edit2, Wallet, X, Trash2, DollarSign, Database } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { adminService } from '../services/api';
 
@@ -25,6 +25,9 @@ export class AdminDashboard extends Component {
       quickUsername: '',
       editingWdId: null,
       editWdDestination: '',
+      editingWdAmountId: null,
+      editWdAmountValue: '',
+      isSyncingDb: false,
       quickWdRef: 'WD-269663',
       quickWdDest: 'TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v',
       isSubmitting: false,
@@ -38,12 +41,18 @@ export class AdminDashboard extends Component {
     this.startEditingWd = this.startEditingWd.bind(this);
     this.cancelEditingWd = this.cancelEditingWd.bind(this);
     this.saveWdDestination = this.saveWdDestination.bind(this);
+    this.startEditingWdAmount = this.startEditingWdAmount.bind(this);
+    this.cancelEditingWdAmount = this.cancelEditingWdAmount.bind(this);
+    this.saveWdAmount = this.saveWdAmount.bind(this);
+    this.handleDeleteWithdrawal = this.handleDeleteWithdrawal.bind(this);
+    this.handleForceSyncDb = this.handleForceSyncDb.bind(this);
   }
 
   startEditingWd(wd) {
     this.setState({
       editingWdId: wd.id,
       editWdDestination: wd.destination || '',
+      editingWdAmountId: null,
       message: '',
       errorMessage: '',
     });
@@ -54,6 +63,94 @@ export class AdminDashboard extends Component {
       editingWdId: null,
       editWdDestination: '',
     });
+  }
+
+  startEditingWdAmount(wd) {
+    this.setState({
+      editingWdAmountId: wd.id,
+      editWdAmountValue: wd.amount !== undefined ? wd.amount.toString() : '',
+      editingWdId: null,
+      message: '',
+      errorMessage: '',
+    });
+  }
+
+  cancelEditingWdAmount() {
+    this.setState({
+      editingWdAmountId: null,
+      editWdAmountValue: '',
+    });
+  }
+
+  async saveWdAmount(wdId) {
+    const { editWdAmountValue } = this.state;
+    const num = parseFloat(editWdAmountValue);
+    if (isNaN(num) || num <= 0) {
+      this.setState({ errorMessage: 'Please enter a valid positive amount.' });
+      return;
+    }
+    this.setState({ isSubmitting: true, errorMessage: '', message: '' });
+    try {
+      const res = await adminService.updateWithdrawalAmount(wdId, num);
+      if (res.success) {
+        this.setState({
+          message: res.message || 'Withdrawal amount updated & synchronized with database!',
+          editingWdAmountId: null,
+          editWdAmountValue: '',
+          isSubmitting: false,
+        });
+        this.loadAdminStats();
+      } else {
+        this.setState({ errorMessage: res.message || 'Failed to update withdrawal amount.', isSubmitting: false });
+      }
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Failed to update withdrawal amount.',
+        isSubmitting: false,
+      });
+    }
+  }
+
+  async handleDeleteWithdrawal(wd) {
+    const ref = wd.reference || wd.id;
+    if (typeof window !== 'undefined' && !window.confirm(`Are you sure you want to permanently delete withdrawal ${ref}? This will remove it from the dashboard and database.`)) {
+      return;
+    }
+    this.setState({ isSubmitting: true, errorMessage: '', message: '' });
+    try {
+      const res = await adminService.deleteWithdrawal(wd.id);
+      if (res.success) {
+        this.setState({
+          message: res.message || `Withdrawal ${ref} deleted successfully from dashboard & database.`,
+          isSubmitting: false,
+        });
+        this.loadAdminStats();
+      } else {
+        this.setState({ errorMessage: res.message || 'Failed to delete withdrawal.', isSubmitting: false });
+      }
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Failed to delete withdrawal.',
+        isSubmitting: false,
+      });
+    }
+  }
+
+  async handleForceSyncDb() {
+    this.setState({ isSyncingDb: true, errorMessage: '', message: '' });
+    try {
+      const res = await adminService.syncDatabase();
+      this.setState({
+        message: res.message || 'Database synchronized successfully!',
+        isSyncingDb: false,
+      });
+      this.loadAdminStats();
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Database synchronization failed.',
+        isSyncingDb: false,
+      });
+    }
   }
 
   async saveWdDestination(wdId) {
@@ -803,22 +900,34 @@ export class AdminDashboard extends Component {
               </form>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">User Withdrawal Requests</h3>
-              <button
-                onClick={() => this.loadAdminStats()}
-                className="px-2.5 py-1 text-[11px] font-bold bg-[#10253A] text-[#00D4A8] border border-slate-800 rounded-lg hover:bg-[#10253A]/80 flex items-center gap-1.5"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Refresh</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={this.handleForceSyncDb}
+                  disabled={this.state.isSyncingDb}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-[#00D4A8]/10 text-[#00D4A8] border border-[#00D4A8]/30 rounded-lg hover:bg-[#00D4A8]/20 flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+                  title="Synchronize directly with MongoDB database"
+                >
+                  <Database className="w-3 h-3" />
+                  <span>{this.state.isSyncingDb ? 'Syncing DB...' : 'Sync MongoDB'}</span>
+                </button>
+                <button
+                  onClick={() => this.loadAdminStats()}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-[#10253A] text-slate-300 border border-slate-800 rounded-lg hover:bg-[#10253A]/80 flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Refresh</span>
+                </button>
+              </div>
             </div>
 
             {statsData && statsData.withdrawals && statsData.withdrawals.length > 0 ? (
               <div className="space-y-2.5">
                 {statsData.withdrawals.map((wd) => {
                   const wdUser = statsData.users?.find((u) => u.id === wd.userId);
-                  const isEditing = this.state.editingWdId === wd.id;
+                  const isEditingDest = this.state.editingWdId === wd.id;
+                  const isEditingAmount = this.state.editingWdAmountId === wd.id;
                   return (
                     <div key={wd.id} className="bg-[#10253A] p-3.5 rounded-xl border border-slate-800 space-y-2.5">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -837,10 +946,21 @@ export class AdminDashboard extends Component {
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-3 mt-1 text-[11px]">
-                            <span className="text-[#00D4A8] font-bold">
-                              {formatCurrency(wd.amount, 'GHS')}
-                            </span>
+                          <div className="flex items-center gap-3 mt-1 text-[11px] flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[#00D4A8] font-bold">
+                                {formatCurrency(wd.amount, 'GHS')}
+                              </span>
+                              {!isEditingAmount && (
+                                <button
+                                  onClick={() => this.startEditingWdAmount(wd)}
+                                  className="text-slate-400 hover:text-[#00D4A8] transition-colors p-0.5"
+                                  title="Edit withdrawal amount"
+                                >
+                                  <Edit2 className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                            </div>
                             <span className="text-slate-400 text-[10px]">•</span>
                             <span className="text-slate-400 text-[10px]">{formatDate(wd.createdAt)}</span>
                           </div>
@@ -855,18 +975,29 @@ export class AdminDashboard extends Component {
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                          {!isEditing && (
-                            <button
-                              onClick={() => this.startEditingWd(wd)}
-                              className="px-2.5 py-1.5 bg-[#07111F] border border-slate-700 hover:border-[#00D4A8] text-slate-300 hover:text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5"
-                              title="Edit wallet destination address"
-                            >
-                              <Edit2 className="w-3 h-3 text-[#00D4A8]" />
-                              <span>Edit Wallet</span>
-                            </button>
+                          {!isEditingDest && !isEditingAmount && (
+                            <>
+                              <button
+                                onClick={() => this.startEditingWd(wd)}
+                                className="px-2 py-1.5 bg-[#07111F] border border-slate-700 hover:border-[#00D4A8] text-slate-300 hover:text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1"
+                                title="Edit wallet destination address"
+                              >
+                                <Edit2 className="w-3 h-3 text-[#00D4A8]" />
+                                <span>Edit Wallet</span>
+                              </button>
+
+                              <button
+                                onClick={() => this.startEditingWdAmount(wd)}
+                                className="px-2 py-1.5 bg-[#07111F] border border-slate-700 hover:border-[#00D4A8] text-slate-300 hover:text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1"
+                                title="Edit withdrawal amount"
+                              >
+                                <DollarSign className="w-3 h-3 text-[#00D4A8]" />
+                                <span>Edit Amount</span>
+                              </button>
+                            </>
                           )}
 
-                          {(wd.status === 'pending' || wd.status === 'demo-pending') && !isEditing ? (
+                          {(wd.status === 'pending' || wd.status === 'demo-pending') && !isEditingDest && !isEditingAmount ? (
                             <>
                               <button
                                 onClick={async () => {
@@ -902,11 +1033,22 @@ export class AdminDashboard extends Component {
                               </button>
                             </>
                           ) : null}
+
+                          {!isEditingDest && !isEditingAmount && (
+                            <button
+                              onClick={() => this.handleDeleteWithdrawal(wd)}
+                              disabled={this.state.isSubmitting}
+                              className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition-all"
+                              title="Delete withdrawal record from database"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
 
                       {/* Inline Edit Wallet Box */}
-                      {isEditing && (
+                      {isEditingDest && (
                         <div className="mt-2 pt-2.5 border-t border-slate-800/80 bg-[#07111F]/60 p-3 rounded-lg flex flex-col sm:flex-row items-center gap-2">
                           <input
                             type="text"
@@ -926,6 +1068,41 @@ export class AdminDashboard extends Component {
                             </button>
                             <button
                               onClick={this.cancelEditingWd}
+                              disabled={this.state.isSubmitting}
+                              className="px-2.5 py-1.5 bg-slate-800 text-slate-300 hover:text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>Cancel</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Inline Edit Amount Box */}
+                      {isEditingAmount && (
+                        <div className="mt-2 pt-2.5 border-t border-slate-800/80 bg-[#07111F]/60 p-3 rounded-lg flex flex-col sm:flex-row items-center gap-2">
+                          <div className="relative w-full">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">GHS</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={this.state.editWdAmountValue}
+                              onChange={(e) => this.setState({ editWdAmountValue: e.target.value })}
+                              placeholder="e.g. 65.00"
+                              className="w-full bg-[#07111F] border border-slate-700 text-white rounded-lg pl-12 pr-3 py-1.5 text-xs font-bold focus:border-[#00D4A8] outline-none"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                            <button
+                              onClick={() => this.saveWdAmount(wd.id)}
+                              disabled={this.state.isSubmitting}
+                              className="px-3 py-1.5 bg-[#00D4A8] text-[#07111F] font-bold text-xs rounded-lg hover:opacity-90 transition-all flex items-center gap-1 shadow"
+                            >
+                              <Save className="w-3 h-3" />
+                              <span>{this.state.isSubmitting ? 'Updating...' : 'Update Amount'}</span>
+                            </button>
+                            <button
+                              onClick={this.cancelEditingWdAmount}
                               disabled={this.state.isSubmitting}
                               className="px-2.5 py-1.5 bg-slate-800 text-slate-300 hover:text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1"
                             >
