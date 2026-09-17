@@ -13,7 +13,13 @@ import { getCryptoRates, convertFiatToCrypto, getMarketTickers } from '../servic
 import { mobileMoneyProvider } from '../services/payment/mobileMoneyProvider';
 import { cryptoProvider } from '../services/payment/cryptoProvider';
 import { sendPasswordResetEmail } from '../services/emailService';
-import { sendWithdrawalNotification, sendTelegramTestAlert, getTelegramBotToken, getTelegramAdminChatId } from '../services/telegramService';
+import {
+  sendWithdrawalNotification,
+  sendDepositNotification,
+  sendTelegramTestAlert,
+  getTelegramBotToken,
+  getTelegramAdminChatId,
+} from '../services/telegramService';
 import { UserModel, isMongoConnected } from '../config/dbMongo';
 
 export const apiRouter = Router();
@@ -991,6 +997,22 @@ apiRouter.post('/deposits/mobile-money', async (req: Request, res: Response) => 
   db.deposits.unshift(deposit);
   await db.saveData();
 
+  // Instant Alert: Send Telegram Notification to Admin Phone
+  const user = db.users.find((u) => u.id === userId);
+  sendDepositNotification({
+    username: user?.username || user?.email || 'CloudMineX User',
+    userId: user?.id,
+    userEmail: user?.email,
+    amount: result.amount,
+    currency: 'GHS',
+    method: result.provider,
+    reference: result.reference,
+    status: 'pending',
+    createdAt: deposit.createdAt,
+  }).catch((err) => {
+    console.error('Telegram deposit notification error:', err?.message || err);
+  });
+
   res.json({
     success: true,
     deposit,
@@ -1043,6 +1065,24 @@ apiRouter.post('/deposits/crypto', async (req: Request, res: Response) => {
   db.deposits.unshift(deposit);
   await db.saveData();
 
+  // Instant Alert: Send Telegram Notification to Admin Phone
+  const user = db.users.find((u) => u.id === userId);
+  sendDepositNotification({
+    username: user?.username || user?.email || 'CloudMineX User',
+    userId: user?.id,
+    userEmail: user?.email,
+    amount: result.amount,
+    currency: curr,
+    cryptoAmount: result.cryptoAmount,
+    method: `Crypto (${curr} - ${network || 'Network'})`,
+    address: result.depositAddress,
+    reference: result.reference,
+    status: 'pending',
+    createdAt: deposit.createdAt,
+  }).catch((err) => {
+    console.error('Telegram crypto deposit notification error:', err?.message || err);
+  });
+
   res.json({
     success: true,
     deposit,
@@ -1082,6 +1122,23 @@ apiRouter.post('/deposits/submit-review', async (req: Request, res: Response) =>
 
   if (deposit) {
     await db.saveData();
+
+    // Instant Alert: Notify Admin of Deposit Reference Submission
+    const targetUser = db.users.find((u) => u.id === deposit!.userId);
+    sendDepositNotification({
+      username: targetUser?.username || targetUser?.email || 'CloudMineX User',
+      userId: targetUser?.id,
+      userEmail: targetUser?.email,
+      amount: deposit.amount,
+      currency: deposit.currency || 'GHS',
+      method: `${deposit.provider || 'Mobile Money'} (Review Submitted)`,
+      reference: reference || deposit.reference,
+      status: 'pending',
+      createdAt: deposit.updatedAt || deposit.createdAt,
+    }).catch((err) => {
+      console.error('Telegram deposit review notification error:', err?.message || err);
+    });
+
     return res.json({
       success: true,
       message: `Deposit reference ${reference || deposit.reference} submitted for Admin review!`,
@@ -1101,7 +1158,7 @@ apiRouter.get('/deposits/:userId', async (req: Request, res: Response) => {
 });
 
 // Demo mode action: Simulate Deposit Confirmation
-apiRouter.post('/deposits/:id/confirm-demo', (req: Request, res: Response) => {
+apiRouter.post('/deposits/:id/confirm-demo', async (req: Request, res: Response) => {
   const deposit = db.deposits.find((d) => d.id === req.params.id);
   if (!deposit) return res.status(404).json({ success: false, message: 'Deposit not found' });
 
@@ -1136,7 +1193,23 @@ apiRouter.post('/deposits/:id/confirm-demo', (req: Request, res: Response) => {
     creditReferralBonus(user, deposit);
   }
 
-  db.saveData();
+  await db.saveData();
+
+  // Instant Alert: Notify Admin of Confirmed Deposit
+  sendDepositNotification({
+    username: user?.username || user?.email || 'CloudMineX User',
+    userId: user?.id,
+    userEmail: user?.email,
+    amount: deposit.amount,
+    currency: deposit.currency || 'GHS',
+    method: deposit.provider,
+    reference: deposit.reference,
+    status: 'confirmed',
+    isConfirmed: true,
+    createdAt: deposit.updatedAt || deposit.createdAt,
+  }).catch((err) => {
+    console.error('Telegram deposit confirm notification error:', err?.message || err);
+  });
 
   res.json({
     success: true,
@@ -1145,6 +1218,86 @@ apiRouter.post('/deposits/:id/confirm-demo', (req: Request, res: Response) => {
     user,
   });
 });
+
+// Generic Deposit handler for direct API/webhook calls
+const handleDeposit = async (req: Request, res: Response) => {
+  const { userId, amount } = req.body;
+  const provider = req.body.provider || req.body.method || 'Mobile Money';
+  const usernameParam = req.body.username;
+  const numAmount = Number(amount) || 100;
+  const reference = req.body.reference || `DEP-${Date.now().toString().slice(-6)}`;
+
+  let user = userId ? db.users.find((u) => u.id === userId) : undefined;
+  if (!user && usernameParam) {
+    user = db.users.find((u) => u.username === usernameParam || u.email === usernameParam);
+  }
+  if (!user && db.users.length > 0) {
+    user = db.users[0];
+  }
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+  const isConfirmed = Boolean(req.body.confirmed);
+  const deposit: DepositCloudMineX = {
+    id: `dep_${Date.now()}`,
+    userId: user.id,
+    type: provider.toLowerCase().includes('crypto') ? 'crypto' : 'mobile_money',
+    provider,
+    currency: req.body.currency || 'GHS',
+    amount: numAmount,
+    reference,
+    status: isConfirmed ? 'confirmed' : 'pending',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (isConfirmed) {
+    user.balance = Number((user.balance + numAmount).toFixed(2));
+    user.totalDeposits = Number(((user.totalDeposits || 0) + numAmount).toFixed(2));
+    user.updatedAt = new Date().toISOString();
+
+    db.transactions.unshift({
+      id: `tx_dep_${Date.now()}`,
+      userId: user.id,
+      type: 'deposit',
+      amount: numAmount,
+      currency: deposit.currency,
+      reference,
+      description: `Deposit via ${provider}`,
+      status: 'completed',
+      createdAt: deposit.createdAt,
+    });
+  }
+
+  db.deposits.unshift(deposit);
+  await db.saveData();
+
+  // Instant Alert: Send Telegram Notification
+  sendDepositNotification({
+    username: user.username || user.email,
+    userId: user.id,
+    userEmail: user.email,
+    amount: numAmount,
+    currency: deposit.currency,
+    method: provider,
+    reference,
+    status: deposit.status,
+    isConfirmed,
+    createdAt: deposit.createdAt,
+  }).catch((err) => {
+    console.error('Telegram deposit notification error:', err?.message || err);
+  });
+
+  res.json({
+    success: true,
+    message: isConfirmed ? 'Deposit confirmed and credited.' : 'Deposit request initiated successfully.',
+    deposit,
+    user,
+  });
+};
+
+apiRouter.post('/deposit', handleDeposit);
+apiRouter.post('/deposits', handleDeposit);
+apiRouter.post('/deposits/create', handleDeposit);
 
 // ================= WITHDRAWALS =================
 const handleWithdrawal = async (req: Request, res: Response) => {
@@ -1781,6 +1934,22 @@ apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Re
   creditReferralBonus(targetUser, newDeposit);
   await db.saveData();
 
+  // Instant Alert: Send Telegram Notification for Admin Approved Deposit
+  sendDepositNotification({
+    username: targetUser.username || targetUser.email,
+    userId: targetUser.id,
+    userEmail: targetUser.email,
+    amount: depositAmount,
+    currency: 'GHS',
+    method: newDeposit.provider,
+    reference: trimmedRef,
+    status: 'confirmed',
+    isConfirmed: true,
+    createdAt: newDeposit.createdAt,
+  }).catch((err) => {
+    console.error('Telegram deposit notification error:', err?.message || err);
+  });
+
   return res.json({
     success: true,
     message: `Reference ${trimmedRef} verified & credited with GHS ${depositAmount.toFixed(2)} to ${targetUser.username}!`,
@@ -1828,6 +1997,25 @@ apiRouter.post('/admin/deposits/:id/approve', async (req: Request, res: Response
   }
 
   await db.saveData();
+
+  // Instant Alert: Send Telegram Notification for Admin Approved Deposit
+  if (user) {
+    sendDepositNotification({
+      username: user.username || user.email,
+      userId: user.id,
+      userEmail: user.email,
+      amount: deposit.amount,
+      currency: deposit.currency || 'GHS',
+      method: deposit.provider,
+      reference: deposit.reference,
+      status: 'confirmed',
+      isConfirmed: true,
+      createdAt: deposit.updatedAt,
+    }).catch((err) => {
+      console.error('Telegram deposit notification error:', err?.message || err);
+    });
+  }
+
   res.json({ success: true, message: 'Deposit approved and user credited successfully', deposit, user });
 });
 
@@ -1845,6 +2033,20 @@ apiRouter.post('/admin/deposits/:id/reject', async (req: Request, res: Response)
 
   await db.saveData();
   res.json({ success: true, message: 'Deposit rejected successfully', deposit });
+});
+
+// Admin: Delete Deposit
+apiRouter.post('/admin/deposits/:id/delete', async (req: Request, res: Response) => {
+  try {
+    await db.syncFromMongo();
+  } catch (err) {}
+
+  const index = db.deposits.findIndex((d) => d.id === req.params.id);
+  if (index === -1) return res.status(404).json({ success: false, message: 'Deposit not found' });
+
+  const removed = db.deposits.splice(index, 1)[0];
+  await db.saveData();
+  res.json({ success: true, message: `Deposit ${removed.reference || removed.id} deleted successfully.`, deposit: removed });
 });
 
 // Admin: Manually credit user account balance or activate mining

@@ -14,6 +14,22 @@ export interface WithdrawalNotificationData {
   createdAt?: string;
 }
 
+export interface DepositNotificationData {
+  username?: string;
+  userId?: string;
+  userEmail?: string;
+  amount: number | string;
+  currency?: string;
+  cryptoAmount?: number | string;
+  method?: string;
+  provider?: string;
+  reference?: string;
+  status?: string;
+  address?: string;
+  createdAt?: string;
+  isConfirmed?: boolean;
+}
+
 export const DEFAULT_TELEGRAM_BOT_TOKEN = '8755123580:AAHFP1Zr-YUivo1Mm9iy-wavlXambFTM0rY';
 export const DEFAULT_TELEGRAM_ADMIN_CHAT_ID = '6336803190';
 
@@ -193,3 +209,106 @@ export async function sendTelegramTestAlert(customChatId?: string): Promise<{
     };
   }
 }
+
+/**
+ * Sends an instant deposit notification to the admin via Telegram Bot.
+ */
+export async function sendDepositNotification(data: DepositNotificationData): Promise<{
+  success: boolean;
+  messageId?: number;
+  error?: string;
+}> {
+  const token = getTelegramBotToken();
+  const chatId = getTelegramAdminChatId();
+
+  if (!token || !chatId) {
+    console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID. Deposit notification skipped.');
+    return { success: false, error: 'Telegram credentials missing' };
+  }
+
+  const rawUsername = data.username || data.userEmail || 'CloudMineX User';
+  const username = escapeMarkdownText(rawUsername);
+  const amount = data.amount;
+  const currency = data.currency || 'GHS';
+  const rawMethod = data.method || data.provider || 'Mobile Money';
+  const method = escapeMarkdownText(rawMethod);
+  const reference = (data.reference || `DEP-${Date.now().toString().slice(-6)}`).replace(/[`\\]/g, '');
+  const isConfirmed = data.isConfirmed || data.status === 'confirmed';
+  const statusText = isConfirmed ? '✅ Confirmed & Credited' : '⏳ Pending Review / Payment';
+  const time = data.createdAt
+    ? new Date(data.createdAt).toLocaleString('en-US', { timeZone: 'Africa/Accra' }) + ' (GMT)'
+    : new Date().toLocaleString();
+
+  const formattedAmount = typeof amount === 'number' ? amount.toFixed(2) : amount;
+  let amountDisplay = currency === 'USD' || currency === '$' ? `$${formattedAmount}` : `${currency} ${formattedAmount}`;
+  if (data.cryptoAmount) {
+    amountDisplay += ` (${data.cryptoAmount} ${currency})`;
+  }
+
+  const addressLine = data.address ? `\n📌 *Address:* \`${data.address.replace(/[`\\]/g, '')}\`` : '';
+
+  const header = isConfirmed ? `💰 *DEPOSIT CONFIRMED*` : `📥 *NEW DEPOSIT INITIATED*`;
+
+  const message =
+    `${header}\n\n` +
+    `🆔 *Ref:* \`${reference}\`\n` +
+    `👤 *User:* ${username}\n` +
+    `💰 *Amount:* ${amountDisplay}\n` +
+    `💳 *Method:* ${method}${addressLine}\n` +
+    `📊 *Status:* ${statusText}\n\n` +
+    `⏰ *Time:* ${time}`;
+
+  console.log(`[Telegram] Sending deposit notification (${reference}) to chat ID ${chatId}...`);
+
+  try {
+    const response = await axios.post(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown',
+      },
+      { timeout: 10000 }
+    );
+
+    if (response.data && response.data.ok) {
+      console.log(`✅ [Telegram] Deposit alert delivered successfully (Message ID: ${response.data.result?.message_id})`);
+      return { success: true, messageId: response.data.result?.message_id };
+    } else {
+      console.warn('[Telegram] Telegram API deposit response failure:', response.data);
+      return { success: false, error: response.data?.description || 'Failed to deliver' };
+    }
+  } catch (error: any) {
+    const errDesc = error.response?.data?.description || error.response?.data || error.message;
+    console.error('Telegram deposit notification error:', errDesc);
+
+    // Fallback plain-text
+    try {
+      const plainMessage =
+        `${isConfirmed ? '💰 DEPOSIT CONFIRMED' : '📥 NEW DEPOSIT INITIATED'}\n\n` +
+        `Ref: ${reference}\n` +
+        `User: ${rawUsername}\n` +
+        `Amount: ${amountDisplay}\n` +
+        `Method: ${rawMethod}\n` +
+        (data.address ? `Address: ${data.address}\n` : '') +
+        `Status: ${statusText}\n\n` +
+        `Time: ${time}`;
+
+      await axios.post(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        {
+          chat_id: chatId,
+          text: plainMessage,
+        },
+        { timeout: 10000 }
+      );
+      console.log(`✅ [Telegram] Fallback plain-text deposit alert delivered successfully.`);
+      return { success: true };
+    } catch (fallbackErr: any) {
+      console.error('Telegram fallback deposit notification error:', fallbackErr.message);
+    }
+
+    return { success: false, error: typeof errDesc === 'string' ? errDesc : JSON.stringify(errDesc) };
+  }
+}
+

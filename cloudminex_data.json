@@ -3,15 +3,15 @@
     {
       "id": "usr_demo_101",
       "username": "demoUser",
-      "balance": 1140,
-      "totalDeposits": 100,
+      "balance": 1290,
+      "totalDeposits": 250,
       "currency": "GHS",
       "referralCode": "CMX-7892",
       "referredBy": null,
       "totalRewards": 175.5,
       "activeContracts": 0,
       "createdAt": "2026-08-03T15:56:11.686Z",
-      "updatedAt": "2026-09-17T17:57:20.449Z"
+      "updatedAt": "2026-09-17T18:17:39.150Z"
     },
     {
       "id": "usr_1787511109395",
@@ -334,6 +334,17 @@
     }
   ],
   "transactions": [
+    {
+      "id": "tx_dep_1789669033572",
+      "userId": "usr_demo_101",
+      "type": "deposit",
+      "amount": 150,
+      "currency": "GHS",
+      "reference": "DEP-031367",
+      "description": "Deposit via MTN MoMo",
+      "status": "completed",
+      "createdAt": "2026-09-17T18:17:13.572Z"
+    },
     {
       "id": "tx_dep_1788819348158",
       "userId": "usr_demo_101",

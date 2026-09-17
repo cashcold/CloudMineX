@@ -652,10 +652,21 @@ export class AdminDashboard extends Component {
               </div>
             </form>
 
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">User Payment Deposits</h3>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
+                  type="button"
+                  onClick={this.handleTestTelegram}
+                  disabled={this.state.isSendingTestTelegram}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-[#0088cc]/15 text-[#29b6f6] border border-[#0088cc]/40 rounded-lg hover:bg-[#0088cc]/25 flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+                  title="Send a test notification to your phone via Telegram"
+                >
+                  <Bell className="w-3 h-3" />
+                  <span>{this.state.isSendingTestTelegram ? 'Testing...' : 'Test Telegram Alert'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => this.loadAdminStats()}
                   className="text-[10px] text-[#00D4A8] hover:underline flex items-center gap-1"
                 >
@@ -1169,8 +1180,8 @@ export class AdminDashboard extends Component {
                     <Bell className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Telegram Withdrawal Alerts</h3>
-                    <p className="text-[10px] text-slate-400">Instant push notifications to your phone when users withdraw</p>
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Telegram Alerts (Deposits & Withdrawals)</h3>
+                    <p className="text-[10px] text-slate-400">Instant push notifications to your phone whenever users deposit or withdraw funds</p>
                   </div>
                 </div>
 
