@@ -28,7 +28,8 @@ import {
   KeyRound,
   Send,
   Check,
-  RotateCcw
+  RotateCcw,
+  AlertCircle
 } from 'lucide-react';
 import api, { userService } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
@@ -236,13 +237,16 @@ export class LandingPage extends Component {
     this.handleDemoLogin = this.handleDemoLogin.bind(this);
     this.handleRequestResetOtp = this.handleRequestResetOtp.bind(this);
     this.handleVerifyAndResetPassword = this.handleVerifyAndResetPassword.bind(this);
+    this.handleKeyDown = this.handleKeyDown.bind(this);
   }
 
   componentDidMount() {
+    window.addEventListener('keydown', this.handleKeyDown);
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const refCode = urlParams.get('ref');
       if (refCode) {
+        document.body.style.overflow = 'hidden';
         this.setState({
           regRefCode: refCode,
           isAuthModalOpen: true,
@@ -254,7 +258,19 @@ export class LandingPage extends Component {
     }
   }
 
+  componentWillUnmount() {
+    document.body.style.overflow = '';
+    window.removeEventListener('keydown', this.handleKeyDown);
+  }
+
+  handleKeyDown(e) {
+    if (e.key === 'Escape' && this.state.isAuthModalOpen) {
+      this.handleCloseAuth();
+    }
+  }
+
   handleOpenAuth(mode = 'login') {
+    document.body.style.overflow = 'hidden';
     this.setState({
       isAuthModalOpen: true,
       authMode: mode,
@@ -264,6 +280,7 @@ export class LandingPage extends Component {
   }
 
   handleCloseAuth() {
+    document.body.style.overflow = '';
     this.setState({ isAuthModalOpen: false, authError: null, authMessage: null });
   }
 
@@ -979,490 +996,575 @@ export class LandingPage extends Component {
 
         {/* LOGIN & REGISTER MODAL */}
         {isAuthModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-            <div className="bg-[#0D1B2A] border border-[#10253A] rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden">
-              {/* Close Button */}
-              <button
-                onClick={this.handleCloseAuth}
-                className="absolute top-4 right-4 text-[#94A3B8] hover:text-white p-1 rounded-lg bg-[#10253A]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              {/* Modal Tabs */}
-              <div className="flex items-center gap-2 border-b border-[#10253A] pb-3 mb-5">
+          <div
+            id="auth-modal-overlay"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                this.handleCloseAuth();
+              }
+            }}
+            className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md animate-fadeIn overflow-y-auto overscroll-contain"
+          >
+            <div
+              id="auth-modal-dialog"
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#0D1B2A] border border-[#10253A] rounded-2xl sm:rounded-3xl max-w-lg w-full shadow-2xl relative flex flex-col max-h-[92dvh] sm:max-h-[88vh] overflow-hidden my-auto border-t-[#00D4A8]/30"
+            >
+              {/* Sticky / Non-scrolling Modal Header */}
+              <div className="shrink-0 bg-[#0D1B2A] px-4 sm:px-6 pt-4 sm:pt-5 pb-3.5 border-b border-[#10253A] relative">
+                {/* Close Button with comfortable touch target */}
                 <button
-                  onClick={() => this.setState({ authMode: 'login', authError: null, authMessage: null })}
-                  className={`flex-1 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                    authMode === 'login'
-                      ? 'bg-[#00D4A8] text-[#07111F]'
-                      : 'bg-[#10253A] text-[#94A3B8] hover:text-white'
-                  }`}
+                  id="close-auth-modal-btn"
+                  type="button"
+                  onClick={this.handleCloseAuth}
+                  className="absolute top-3 right-3 sm:top-4 sm:right-4 text-[#94A3B8] hover:text-white p-2 rounded-xl bg-[#10253A] hover:bg-[#16304d] transition-colors touch-manipulation cursor-pointer"
+                  aria-label="Close modal"
                 >
-                  <User className="w-3.5 h-3.5" />
-                  <span>Login</span>
+                  <X className="w-4 h-4" />
                 </button>
 
-                <button
-                  onClick={() => this.setState({ authMode: 'register', authError: null, authMessage: null })}
-                  className={`flex-1 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                    authMode === 'register'
-                      ? 'bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F]'
-                      : 'bg-[#10253A] text-[#94A3B8] hover:text-white'
-                  }`}
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Register</span>
-                </button>
-
-                <button
-                  onClick={() => this.setState({ authMode: 'forgot', authError: null, authMessage: null, forgotStep: 1 })}
-                  className={`flex-1 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                    authMode === 'forgot'
-                      ? 'bg-amber-400 text-[#07111F]'
-                      : 'bg-[#10253A] text-[#94A3B8] hover:text-white'
-                  }`}
-                >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span>Reset</span>
-                </button>
-              </div>
-
-              {/* Error / Success Feedback */}
-              {authError && (
-                <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium">
-                  {authError}
-                </div>
-              )}
-              {authMessage && (
-                <div className="mb-4 p-3 rounded-lg bg-[#00D4A8]/10 border border-[#00D4A8]/30 text-[#00D4A8] text-xs font-medium">
-                  {authMessage}
-                </div>
-              )}
-
-              {/* LOGIN FORM */}
-              {authMode === 'login' ? (
-                <form onSubmit={this.handleLoginSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                      Username / Phone
-                    </label>
-                    <div className="relative">
-                      <User className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
-                      <input
-                        type="text"
-                        placeholder="e.g. miner123 or 0241234567"
-                        value={loginUsername}
-                        onChange={(e) => this.setState({ loginUsername: e.target.value })}
-                        className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                      />
-                    </div>
+                {/* Modal Title / Brand header */}
+                <div className="flex items-center gap-2 mb-3 pr-10">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-[#00D4A8] to-[#2DD4FF] flex items-center justify-center text-[#07111F] shadow-sm shrink-0">
+                    <Zap className="w-4 h-4 fill-current" />
                   </div>
-
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider">
-                        Password
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => this.setState({ authMode: 'forgot', forgotEmailOrUsername: loginUsername, authError: null, authMessage: null, forgotStep: 1 })}
-                        className="text-[11px] text-[#00D4A8] hover:underline font-semibold"
-                      >
-                        Forgot password?
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
-                      <input
-                        type={showLoginPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
-                        value={loginPassword}
-                        onChange={(e) => this.setState({ loginPassword: e.target.value })}
-                        className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => this.setState({ showLoginPassword: !showLoginPassword })}
-                        className="absolute right-3 top-2.5 text-[#94A3B8] hover:text-white transition-colors p-1"
-                        title={showLoginPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
+                    <h2 className="text-xs sm:text-sm font-extrabold text-white tracking-wide">
+                      CloudMineX Portal
+                    </h2>
+                    <p className="text-[10px] sm:text-[11px] text-[#94A3B8]">
+                      {authMode === 'register' ? 'Create a high-yield cloud mining account' : authMode === 'forgot' ? 'Reset your account password' : 'Log in to your mining terminal'}
+                    </p>
                   </div>
+                </div>
+
+                {/* Modal Tabs */}
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <button
+                    id="tab-login-btn"
+                    type="button"
+                    onClick={() => this.setState({ authMode: 'login', authError: null, authMessage: null })}
+                    className={`flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 touch-manipulation cursor-pointer ${
+                      authMode === 'login'
+                        ? 'bg-[#00D4A8] text-[#07111F] shadow'
+                        : 'bg-[#10253A] text-[#94A3B8] hover:text-white hover:bg-[#16304d]'
+                    }`}
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    <span>Login</span>
+                  </button>
 
                   <button
-                    type="submit"
-                    disabled={authLoading}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-md"
+                    id="tab-register-btn"
+                    type="button"
+                    onClick={() => this.setState({ authMode: 'register', authError: null, authMessage: null })}
+                    className={`flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 touch-manipulation cursor-pointer ${
+                      authMode === 'register'
+                        ? 'bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] shadow'
+                        : 'bg-[#10253A] text-[#94A3B8] hover:text-white hover:bg-[#16304d]'
+                    }`}
                   >
-                    {authLoading ? 'Signing In...' : 'LOG IN TO CLOUDMINE'}
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Register</span>
                   </button>
-                </form>
-              ) : authMode === 'forgot' ? (
-                /* FORGOT & RESET PASSWORD VIA 6-DIGIT EMAIL CODE */
-                <div className="space-y-4">
-                  {forgotStep === 1 ? (
-                    <form onSubmit={this.handleRequestResetOtp} className="space-y-3">
-                      <div className="p-3 rounded-xl bg-[#10253A] border border-[#94A3B8]/10 text-xs text-[#94A3B8] leading-relaxed">
-                        Enter your registered <strong className="text-white">username, email address, or phone number</strong>. We will send a secure <strong className="text-[#00D4A8]">6-digit verification code</strong> to your email.
+
+                  <button
+                    id="tab-reset-btn"
+                    type="button"
+                    onClick={() => this.setState({ authMode: 'forgot', authError: null, authMessage: null, forgotStep: 1 })}
+                    className={`flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 touch-manipulation cursor-pointer ${
+                      authMode === 'forgot'
+                        ? 'bg-amber-400 text-[#07111F] shadow'
+                        : 'bg-[#10253A] text-[#94A3B8] hover:text-white hover:bg-[#16304d]'
+                    }`}
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Reset</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable Form Body with momentum scrolling */}
+              <div className="flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4 sm:py-5">
+                {/* Error / Success Feedback */}
+                {authError && (
+                  <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2 animate-fadeIn">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                    <span className="leading-snug">{authError}</span>
+                  </div>
+                )}
+                {authMessage && (
+                  <div className="mb-4 p-3 rounded-xl bg-[#00D4A8]/15 border border-[#00D4A8]/30 text-[#00D4A8] text-xs font-medium flex items-start gap-2 animate-fadeIn">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-[#00D4A8] mt-0.5" />
+                    <span className="leading-snug">{authMessage}</span>
+                  </div>
+                )}
+
+                {/* LOGIN FORM */}
+                {authMode === 'login' ? (
+                  <form onSubmit={this.handleLoginSubmit} className="space-y-4 pb-4">
+                    <div>
+                      <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                        Username / Phone
+                      </label>
+                      <div className="relative">
+                        <User className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3.5" />
+                        <input
+                          type="text"
+                          placeholder="e.g. miner123 or 0241234567"
+                          value={loginUsername}
+                          onChange={(e) => this.setState({ loginUsername: e.target.value })}
+                          className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-3 pl-9 pr-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider">
+                          Password
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => this.setState({ authMode: 'forgot', forgotEmailOrUsername: loginUsername, authError: null, authMessage: null, forgotStep: 1 })}
+                          className="text-[11px] text-[#00D4A8] hover:underline font-semibold"
+                        >
+                          Forgot password?
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3.5" />
+                        <input
+                          type={showLoginPassword ? 'text' : 'password'}
+                          placeholder="••••••••"
+                          value={loginPassword}
+                          onChange={(e) => this.setState({ loginPassword: e.target.value })}
+                          className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-3 pl-9 pr-10 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => this.setState({ showLoginPassword: !showLoginPassword })}
+                          className="absolute right-3 top-3 text-[#94A3B8] hover:text-white transition-colors p-1"
+                          title={showLoginPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      id="login-submit-btn"
+                      type="submit"
+                      disabled={authLoading}
+                      className="w-full py-3 sm:py-3.5 rounded-xl bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs sm:text-sm uppercase tracking-wider hover:brightness-110 active:scale-[0.99] transition-all shadow-md touch-manipulation cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <User className="w-4 h-4" />
+                      <span>{authLoading ? 'Signing In...' : 'LOG IN TO CLOUDMINE'}</span>
+                    </button>
+
+                    <div className="text-center pt-2 pb-1">
+                      <button
+                        type="button"
+                        onClick={() => this.setState({ authMode: 'register', authError: null, authMessage: null })}
+                        className="text-xs text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
+                      >
+                        Don't have an account? <span className="text-[#00D4A8] font-bold underline">Register for free</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : authMode === 'forgot' ? (
+                  /* FORGOT & RESET PASSWORD VIA 6-DIGIT EMAIL CODE */
+                  <div className="space-y-4 pb-4">
+                    {forgotStep === 1 ? (
+                      <form onSubmit={this.handleRequestResetOtp} className="space-y-3.5">
+                        <div className="p-3 rounded-xl bg-[#10253A] border border-[#94A3B8]/10 text-xs text-[#94A3B8] leading-relaxed">
+                          Enter your registered <strong className="text-white">username, email address, or phone number</strong>. We will send a secure <strong className="text-[#00D4A8]">6-digit verification code</strong> to your email.
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                            Username or Email Address *
+                          </label>
+                          <div className="relative">
+                            <Mail className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3.5" />
+                            <input
+                              type="text"
+                              placeholder="e.g. miner123 or user@gmail.com"
+                              value={forgotEmailOrUsername}
+                              onChange={(e) => this.setState({ forgotEmailOrUsername: e.target.value })}
+                              className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-3 pl-9 pr-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={authLoading}
+                          className="w-full py-3 sm:py-3.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-[#07111F] font-extrabold text-xs sm:text-sm uppercase tracking-wider hover:brightness-110 active:scale-[0.99] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer touch-manipulation"
+                        >
+                          <Send className="w-4 h-4" />
+                          <span>{authLoading ? 'Sending 6-Digit Code...' : 'SEND 6-DIGIT CODE'}</span>
+                        </button>
+
+                        <div className="text-center pt-2">
+                          <button
+                            type="button"
+                            onClick={() => this.setState({ authMode: 'login', authError: null, authMessage: null })}
+                            className="text-xs text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
+                          >
+                            &larr; Back to Login
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      /* STEP 2: VERIFY 6-DIGIT OTP & ENTER NEW PASSWORD */
+                      <form onSubmit={this.handleVerifyAndResetPassword} className="space-y-3.5">
+                        <div className="p-3 rounded-xl bg-[#00D4A8]/10 border border-[#00D4A8]/30 text-xs text-[#00D4A8] leading-relaxed flex items-start gap-2">
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                          <div>
+                            <span>A 6-digit verification code was sent to </span>
+                            <strong className="text-white underline">{forgotTargetEmail}</strong>.
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">
+                            6-Digit Verification Code *
+                          </label>
+                          <div className="relative">
+                            <KeyRound className="w-4 h-4 text-amber-400 absolute left-3 top-3.5" />
+                            <input
+                              type="text"
+                              maxLength={6}
+                              placeholder="e.g. 123456"
+                              value={forgotCode}
+                              onChange={(e) => this.setState({ forgotCode: e.target.value.replace(/[^0-9]/g, '') })}
+                              className="w-full bg-[#10253A] border-2 border-amber-400/50 rounded-xl py-2.5 pl-9 pr-3 text-base tracking-widest font-mono text-center text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                            New Password *
+                          </label>
+                          <div className="relative">
+                            <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3.5" />
+                            <input
+                              type={showForgotNewPassword ? 'text' : 'password'}
+                              placeholder="Enter new password (min 4 chars)"
+                              value={forgotNewPassword}
+                              onChange={(e) => this.setState({ forgotNewPassword: e.target.value })}
+                              className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-3 pl-9 pr-10 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => this.setState({ showForgotNewPassword: !showForgotNewPassword })}
+                              className="absolute right-3 top-3 text-[#94A3B8] hover:text-white transition-colors p-1"
+                            >
+                              {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                            Confirm New Password *
+                          </label>
+                          <div className="relative">
+                            <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3.5" />
+                            <input
+                              type={showForgotConfirmPassword ? 'text' : 'password'}
+                              placeholder="Confirm new password"
+                              value={forgotConfirmPassword}
+                              onChange={(e) => this.setState({ forgotConfirmPassword: e.target.value })}
+                              className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-3 pl-9 pr-10 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => this.setState({ showForgotConfirmPassword: !showForgotConfirmPassword })}
+                              className="absolute right-3 top-3 text-[#94A3B8] hover:text-white transition-colors p-1"
+                            >
+                              {showForgotConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={authLoading}
+                          className="w-full py-3 sm:py-3.5 rounded-xl bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs sm:text-sm uppercase tracking-wider hover:brightness-110 active:scale-[0.99] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer touch-manipulation"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>{authLoading ? 'Updating Password...' : 'VERIFY & UPDATE PASSWORD'}</span>
+                        </button>
+
+                        <div className="flex items-center justify-between pt-2 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => this.setState({ forgotStep: 1, authError: null, authMessage: null })}
+                            className="text-[#94A3B8] hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            &larr; Change Email
+                          </button>
+                          <button
+                            type="button"
+                            onClick={this.handleRequestResetOtp}
+                            disabled={authLoading}
+                            className="text-[#00D4A8] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Resend Code</span>
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                ) : (
+                  /* REGISTER FORM - Fully responsive on all mobile & desktop viewports */
+                  <form onSubmit={this.handleRegisterSubmit} className="space-y-3 sm:space-y-3.5 pb-6">
+                    {/* Username and Email in 2 columns on sm+ screens, 1 column on mobile */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                          Full Name or Username *
+                        </label>
+                        <div className="relative">
+                          <User className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
+                          <input
+                            type="text"
+                            placeholder="e.g. John Miner"
+                            value={regUsername}
+                            onChange={(e) => this.setState({ regUsername: e.target.value })}
+                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                            required
+                          />
+                        </div>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                          Username or Email Address *
+                        <label className="block text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                          Email Address * <span className="text-[#00D4A8] font-normal lowercase">(for OTP reset)</span>
                         </label>
                         <div className="relative">
                           <Mail className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
                           <input
-                            type="text"
-                            placeholder="e.g. miner123 or user@gmail.com"
-                            value={forgotEmailOrUsername}
-                            onChange={(e) => this.setState({ forgotEmailOrUsername: e.target.value })}
-                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                            type="email"
+                            placeholder="e.g. miner@gmail.com"
+                            value={regEmail}
+                            onChange={(e) => this.setState({ regEmail: e.target.value })}
+                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
                             required
                           />
                         </div>
                       </div>
-
-                      <button
-                        type="submit"
-                        disabled={authLoading}
-                        className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 text-[#07111F] font-extrabold text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-md flex items-center justify-center gap-2"
-                      >
-                        <Send className="w-4 h-4" />
-                        <span>{authLoading ? 'Sending 6-Digit Code...' : 'SEND 6-DIGIT VERIFICATION CODE'}</span>
-                      </button>
-
-                      <div className="text-center pt-2">
-                        <button
-                          type="button"
-                          onClick={() => this.setState({ authMode: 'login', authError: null, authMessage: null })}
-                          className="text-xs text-[#94A3B8] hover:text-white transition-colors"
-                        >
-                          &larr; Back to Login
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    /* STEP 2: VERIFY 6-DIGIT OTP & ENTER NEW PASSWORD */
-                    <form onSubmit={this.handleVerifyAndResetPassword} className="space-y-3">
-                      <div className="p-3 rounded-xl bg-[#00D4A8]/10 border border-[#00D4A8]/30 text-xs text-[#00D4A8] leading-relaxed flex items-start gap-2">
-                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                        <div>
-                          <span>A 6-digit verification code was sent to </span>
-                          <strong className="text-white underline">{forgotTargetEmail}</strong>.
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">
-                          6-Digit Verification Code *
-                        </label>
-                        <div className="relative">
-                          <KeyRound className="w-4 h-4 text-amber-400 absolute left-3 top-3" />
-                          <input
-                            type="text"
-                            maxLength={6}
-                            placeholder="e.g. 123456"
-                            value={forgotCode}
-                            onChange={(e) => this.setState({ forgotCode: e.target.value.replace(/[^0-9]/g, '') })}
-                            className="w-full bg-[#10253A] border-2 border-amber-400/50 rounded-xl py-2.5 pl-9 pr-3 text-sm tracking-widest font-mono text-center text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                          New Password *
-                        </label>
-                        <div className="relative">
-                          <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
-                          <input
-                            type={showForgotNewPassword ? 'text' : 'password'}
-                            placeholder="Enter new password (min 4 chars)"
-                            value={forgotNewPassword}
-                            onChange={(e) => this.setState({ forgotNewPassword: e.target.value })}
-                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                            required
-                          />
-                          <button
-                            type="button"
-                            onClick={() => this.setState({ showForgotNewPassword: !showForgotNewPassword })}
-                            className="absolute right-3 top-2.5 text-[#94A3B8] hover:text-white transition-colors p-1"
-                          >
-                            {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                          Confirm New Password *
-                        </label>
-                        <div className="relative">
-                          <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
-                          <input
-                            type={showForgotConfirmPassword ? 'text' : 'password'}
-                            placeholder="Confirm new password"
-                            value={forgotConfirmPassword}
-                            onChange={(e) => this.setState({ forgotConfirmPassword: e.target.value })}
-                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                            required
-                          />
-                          <button
-                            type="button"
-                            onClick={() => this.setState({ showForgotConfirmPassword: !showForgotConfirmPassword })}
-                            className="absolute right-3 top-2.5 text-[#94A3B8] hover:text-white transition-colors p-1"
-                          >
-                            {showForgotConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={authLoading}
-                        className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-md flex items-center justify-center gap-2"
-                      >
-                        <Check className="w-4 h-4" />
-                        <span>{authLoading ? 'Updating Password...' : 'VERIFY & UPDATE PASSWORD'}</span>
-                      </button>
-
-                      <div className="flex items-center justify-between pt-2 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => this.setState({ forgotStep: 1, authError: null, authMessage: null })}
-                          className="text-[#94A3B8] hover:text-white transition-colors flex items-center gap-1"
-                        >
-                          &larr; Change Email
-                        </button>
-                        <button
-                          type="button"
-                          onClick={this.handleRequestResetOtp}
-                          disabled={authLoading}
-                          className="text-[#00D4A8] hover:underline font-semibold flex items-center gap-1"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          <span>Resend Code</span>
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              ) : (
-                /* REGISTER FORM */
-                <form onSubmit={this.handleRegisterSubmit} className="space-y-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                      Full Name or Username *
-                    </label>
-                    <div className="relative">
-                      <User className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        placeholder="e.g. John Miner"
-                        value={regUsername}
-                        onChange={(e) => this.setState({ regUsername: e.target.value })}
-                        className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-lg py-1.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                      Email Address * <span className="text-[#00D4A8] font-normal lowercase">(for 6-digit OTP reset)</span>
-                    </label>
-                    <div className="relative">
-                      <Mail className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-2.5" />
-                      <input
-                        type="email"
-                        placeholder="e.g. miner@gmail.com"
-                        value={regEmail}
-                        onChange={(e) => this.setState({ regEmail: e.target.value })}
-                        className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-lg py-1.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                      Phone Number
-                    </label>
-                    <div className="relative">
-                      <Phone className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        placeholder="e.g. 024 123 4567"
-                        value={regPhone}
-                        onChange={(e) => this.setState({ regPhone: e.target.value })}
-                        className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-lg py-1.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                      Password *
-                    </label>
-                    <div className="relative">
-                      <Lock className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-2.5" />
-                      <input
-                        type={showRegPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
-                        value={regPassword}
-                        onChange={(e) => this.setState({ regPassword: e.target.value })}
-                        className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-lg py-1.5 pl-9 pr-9 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => this.setState({ showRegPassword: !showRegPassword })}
-                        className="absolute right-2.5 top-2 text-[#94A3B8] hover:text-white transition-colors p-0.5"
-                        title={showRegPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                      Confirm Password *
-                    </label>
-                    <div className="relative">
-                      <Lock className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-2.5" />
-                      <input
-                        type={showRegConfirmPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
-                        value={regConfirmPassword}
-                        onChange={(e) => this.setState({ regConfirmPassword: e.target.value })}
-                        className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-lg py-1.5 pl-9 pr-9 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => this.setState({ showRegConfirmPassword: !showRegConfirmPassword })}
-                        className="absolute right-2.5 top-2 text-[#94A3B8] hover:text-white transition-colors p-0.5"
-                        title={showRegConfirmPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showRegConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Payment Method Selector */}
-                  <div className="pt-1">
-                    <label className="block text-[10px] font-bold text-[#00D4A8] uppercase tracking-wider mb-1.5">
-                      Preferred Payment / Payout Method *
-                    </label>
-
-                    <div className="grid grid-cols-2 gap-1.5 mb-2">
-                      <button
-                        type="button"
-                        onClick={() => this.setState({ regPaymentMethod: 'mobile' })}
-                        className={`p-2 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition-all text-left ${
-                          regPaymentMethod === 'mobile'
-                            ? 'bg-[#00D4A8]/10 border-[#00D4A8] text-white shadow'
-                            : 'bg-[#10253A] border-[#94A3B8]/20 text-[#94A3B8] hover:text-white'
-                        }`}
-                      >
-                        <Phone className="w-3.5 h-3.5 text-[#00D4A8]" />
-                        <span>Mobile Payments</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => this.setState({ regPaymentMethod: 'ethereum' })}
-                        className={`p-2 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition-all text-left ${
-                          regPaymentMethod === 'ethereum'
-                            ? 'bg-[#2DD4FF]/10 border-[#2DD4FF] text-white shadow'
-                            : 'bg-[#10253A] border-[#94A3B8]/20 text-[#94A3B8] hover:text-white'
-                        }`}
-                      >
-                        <Zap className="w-3.5 h-3.5 text-[#2DD4FF]" />
-                        <span>Ethereum (ETH)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => this.setState({ regPaymentMethod: 'btc' })}
-                        className={`p-2 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition-all text-left ${
-                          regPaymentMethod === 'btc'
-                            ? 'bg-amber-500/10 border-amber-400 text-white shadow'
-                            : 'bg-[#10253A] border-[#94A3B8]/20 text-[#94A3B8] hover:text-white'
-                        }`}
-                      >
-                        <CreditCard className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Bitcoin (BTC)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => this.setState({ regPaymentMethod: 'usdt' })}
-                        className={`p-2 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition-all text-left ${
-                          regPaymentMethod === 'usdt'
-                            ? 'bg-emerald-500/10 border-emerald-400 text-white shadow'
-                            : 'bg-[#10253A] border-[#94A3B8]/20 text-[#94A3B8] hover:text-white'
-                        }`}
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>USDT (TRC20)</span>
-                      </button>
                     </div>
 
-                    {/* Dynamic Payment Account / Wallet Input */}
                     <div>
-                      <label className="block text-[10px] text-[#94A3B8] font-bold mb-1">
-                        {regPaymentMethod === 'mobile' && '📱 Enter Mobile Money Phone / Network (e.g., MTN MoMo 0241234567)'}
-                        {regPaymentMethod === 'ethereum' && '🔷 Enter Ethereum (ETH) Wallet Address'}
-                        {regPaymentMethod === 'btc' && '₿ Enter Bitcoin (BTC) Wallet Address'}
-                        {regPaymentMethod === 'usdt' && '💲 Enter USDT Wallet Address (TRC20/ERC20)'}
+                      <label className="block text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                        Phone Number <span className="text-slate-500 font-normal lowercase">(optional for MoMo)</span>
                       </label>
-                      <input
-                        type="text"
-                        placeholder={
-                          regPaymentMethod === 'mobile' ? 'e.g. MTN MoMo 0241234567' :
-                          regPaymentMethod === 'btc' ? 'e.g. 15512yaegwoVpZ2mjnsZ8mmVdhMnbcYybZ' :
-                          regPaymentMethod === 'ethereum' ? 'e.g. 0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44' :
-                          'e.g. TMmpdCUFH9xJ5efivRdyAw8MBVGqdsJmpX'
-                        }
-                        value={regPaymentAddress}
-                        onChange={(e) => this.setState({ regPaymentAddress: e.target.value })}
-                        className="w-full bg-[#10253A] border border-[#00D4A8]/40 rounded-lg py-1.5 px-3 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                      />
+                      <div className="relative">
+                        <Phone className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
+                        <input
+                          type="text"
+                          placeholder="e.g. 024 123 4567"
+                          value={regPhone}
+                          onChange={(e) => this.setState({ regPhone: e.target.value })}
+                          className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                        />
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
-                      Referral Code (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. CX9982"
-                      value={regRefCode}
-                      onChange={(e) => this.setState({ regRefCode: e.target.value })}
-                      className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-lg py-1.5 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
-                    />
-                  </div>
+                    {/* Password & Confirm Password in 2 columns on sm+ screens */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                          Password *
+                        </label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
+                          <input
+                            type={showRegPassword ? 'text' : 'password'}
+                            placeholder="••••••••"
+                            value={regPassword}
+                            onChange={(e) => this.setState({ regPassword: e.target.value })}
+                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-10 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => this.setState({ showRegPassword: !showRegPassword })}
+                            className="absolute right-2.5 top-2.5 text-[#94A3B8] hover:text-white transition-colors p-1"
+                            title={showRegPassword ? 'Hide password' : 'Show password'}
+                          >
+                            {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
 
-                  <div className="p-2 rounded-lg bg-[#00D4A8]/10 border border-[#00D4A8]/20 text-[10px] text-[#00D4A8] font-semibold flex items-center gap-1.5">
-                    <Gift className="w-3.5 h-3.5 text-[#00D4A8]" />
-                    <span>Includes GHS 50 Welcome Free Mining Credit</span>
-                  </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                          Confirm Password *
+                        </label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3 top-3" />
+                          <input
+                            type={showRegConfirmPassword ? 'text' : 'password'}
+                            placeholder="••••••••"
+                            value={regConfirmPassword}
+                            onChange={(e) => this.setState({ regConfirmPassword: e.target.value })}
+                            className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 pl-9 pr-10 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => this.setState({ showRegConfirmPassword: !showRegConfirmPassword })}
+                            className="absolute right-2.5 top-2.5 text-[#94A3B8] hover:text-white transition-colors p-1"
+                            title={showRegConfirmPassword ? 'Hide password' : 'Show password'}
+                          >
+                            {showRegConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
 
-                  <button
-                    type="submit"
-                    disabled={authLoading}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-md"
-                  >
-                    {authLoading ? 'Creating Account...' : 'REGISTER ACCOUNT'}
-                  </button>
-                </form>
-              )}
+                    {/* Preferred Payment / Payout Method Selector */}
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[11px] font-bold text-[#00D4A8] uppercase tracking-wider">
+                          Preferred Payout Method *
+                        </label>
+                        <span className="text-[10px] text-[#94A3B8]">Tap to choose</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 mb-2.5">
+                        <button
+                          type="button"
+                          onClick={() => this.setState({ regPaymentMethod: 'mobile' })}
+                          className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-center gap-2 transition-all text-left touch-manipulation cursor-pointer ${
+                            regPaymentMethod === 'mobile'
+                              ? 'bg-[#00D4A8]/15 border-[#00D4A8] text-white shadow-sm ring-1 ring-[#00D4A8]'
+                              : 'bg-[#10253A] border-[#94A3B8]/20 text-[#94A3B8] hover:text-white hover:bg-[#142e48]'
+                          }`}
+                        >
+                          <Phone className="w-4 h-4 text-[#00D4A8] shrink-0" />
+                          <span className="truncate">Mobile Payments</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => this.setState({ regPaymentMethod: 'ethereum' })}
+                          className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-center gap-2 transition-all text-left touch-manipulation cursor-pointer ${
+                            regPaymentMethod === 'ethereum'
+                              ? 'bg-[#2DD4FF]/15 border-[#2DD4FF] text-white shadow-sm ring-1 ring-[#2DD4FF]'
+                              : 'bg-[#10253A] border-[#94A3B8]/20 text-[#94A3B8] hover:text-white hover:bg-[#142e48]'
+                          }`}
+                        >
+                          <Zap className="w-4 h-4 text-[#2DD4FF] shrink-0" />
+                          <span className="truncate">Ethereum (ETH)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => this.setState({ regPaymentMethod: 'btc' })}
+                          className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-center gap-2 transition-all text-left touch-manipulation cursor-pointer ${
+                            regPaymentMethod === 'btc'
+                              ? 'bg-amber-500/15 border-amber-400 text-white shadow-sm ring-1 ring-amber-400'
+                              : 'bg-[#10253A] border-[#94A3B8]/20 text-[#94A3B8] hover:text-white hover:bg-[#142e48]'
+                          }`}
+                        >
+                          <CreditCard className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span className="truncate">Bitcoin (BTC)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => this.setState({ regPaymentMethod: 'usdt' })}
+                          className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-center gap-2 transition-all text-left touch-manipulation cursor-pointer ${
+                            regPaymentMethod === 'usdt'
+                              ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-sm ring-1 ring-emerald-400'
+                              : 'bg-[#10253A] border-[#94A3B8]/20 text-[#94A3B8] hover:text-white hover:bg-[#142e48]'
+                          }`}
+                        >
+                          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span className="truncate">USDT (TRC20)</span>
+                        </button>
+                      </div>
+
+                      {/* Dynamic Payment Account / Wallet Input */}
+                      <div>
+                        <label className="block text-[10px] text-[#94A3B8] font-bold mb-1">
+                          {regPaymentMethod === 'mobile' && '📱 Enter Mobile Money Phone / Network (e.g., MTN MoMo 0241234567)'}
+                          {regPaymentMethod === 'ethereum' && '🔷 Enter Ethereum (ETH) Wallet Address'}
+                          {regPaymentMethod === 'btc' && '₿ Enter Bitcoin (BTC) Wallet Address'}
+                          {regPaymentMethod === 'usdt' && '💲 Enter USDT Wallet Address (TRC20/ERC20)'}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={
+                            regPaymentMethod === 'mobile' ? 'e.g. MTN MoMo 0241234567' :
+                            regPaymentMethod === 'btc' ? 'e.g. 15512yaegwoVpZ2mjnsZ8mmVdhMnbcYybZ' :
+                            regPaymentMethod === 'ethereum' ? 'e.g. 0x450306b9721d2cc03a70f3c6aa9b7a61b0137b44' :
+                            'e.g. TMmpdCUFH9xJ5efivRdyAw8MBVGqdsJmpX'
+                          }
+                          value={regPaymentAddress}
+                          onChange={(e) => this.setState({ regPaymentAddress: e.target.value })}
+                          className="w-full bg-[#10253A] border border-[#00D4A8]/40 rounded-xl py-2.5 px-3 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Referral Code & Free Mining Credit */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                      <div>
+                        <label className="block text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">
+                          Referral Code (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. CX9982"
+                          value={regRefCode}
+                          onChange={(e) => this.setState({ regRefCode: e.target.value })}
+                          className="w-full bg-[#10253A] border border-[#94A3B8]/20 rounded-xl py-2.5 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                        />
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-[#00D4A8]/10 border border-[#00D4A8]/20 text-[11px] text-[#00D4A8] font-semibold flex items-center gap-2">
+                        <Gift className="w-4 h-4 text-[#00D4A8] shrink-0" />
+                        <span className="leading-tight">Includes GHS 50 Welcome Free Mining Credit</span>
+                      </div>
+                    </div>
+
+                    {/* Submit Button with prominent touch area */}
+                    <div className="pt-2">
+                      <button
+                        id="register-submit-btn"
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs sm:text-sm uppercase tracking-wider hover:brightness-110 active:scale-[0.99] transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer touch-manipulation"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        <span>{authLoading ? 'Creating Account...' : 'REGISTER ACCOUNT'}</span>
+                      </button>
+                    </div>
+
+                    <div className="text-center pt-2 pb-2">
+                      <button
+                        type="button"
+                        onClick={() => this.setState({ authMode: 'login', authError: null, authMessage: null })}
+                        className="text-xs text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
+                      >
+                        Already have an account? <span className="text-[#00D4A8] font-bold underline">Log In</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
             </div>
           </div>
         )}
