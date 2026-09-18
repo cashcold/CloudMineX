@@ -1800,9 +1800,10 @@ var AFFILIATE_MILESTONES = [
     title: "Bronze Affiliate",
     requiredRefs: 1,
     perk: "10% First Deposit Comm",
-    rewardText: "$5 Cash Bonus",
-    rewardUsd: 5,
-    rewardGhs: 75,
+    rewardText: "10% First Deposit Comm",
+    rewardUsd: 0,
+    rewardGhs: 0,
+    isAutomaticCommission: true,
     extraComm: 0.1,
     // 10% First Deposit Comm
     color: "#D97706"
@@ -3036,13 +3037,15 @@ apiRouter.get("/referrals/:userId", async (req, res) => {
   user.claimedMilestones = claimedList;
   const milestonesWithStatus = AFFILIATE_MILESTONES.map((m) => {
     const isUnlocked = fundedCount >= m.requiredRefs;
-    const isClaimed = claimedList.includes(m.id);
-    const canClaim = isUnlocked && !isClaimed;
+    const isAutomatic = Boolean(m.isAutomaticCommission || m.rewardGhs === 0);
+    const isClaimed = isAutomatic ? isUnlocked : claimedList.includes(m.id);
+    const canClaim = !isAutomatic && isUnlocked && !isClaimed;
     return {
       ...m,
       isUnlocked,
       isClaimed,
       canClaim,
+      isAutomatic,
       currentFunded: fundedCount,
       progressPercent: Math.min(100, Math.round(fundedCount / m.requiredRefs * 100))
     };
@@ -3106,6 +3109,12 @@ apiRouter.post("/referrals/claim-milestone", async (req, res) => {
   const milestone = AFFILIATE_MILESTONES.find((m) => m.id === milestoneId);
   if (!milestone) {
     return res.status(400).json({ success: false, message: "Invalid milestone ID" });
+  }
+  if (milestone.id === "bronze" || milestone.isAutomaticCommission || milestone.rewardGhs === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Bronze Affiliate grants 10% First Deposit Commission, which is automatically credited directly to your balance upon each referral\u2019s first confirmed deposit."
+    });
   }
   const fundedCount = getFundedReferralsCount(user.id);
   if (fundedCount < milestone.requiredRefs) {

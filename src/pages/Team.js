@@ -149,12 +149,13 @@ export class Team extends Component {
         title: 'Bronze Affiliate',
         requiredRefs: 1,
         perk: '10% First Deposit Comm',
-        rewardText: '$5 Cash Bonus',
-        rewardUsd: 5,
-        rewardGhs: 75,
+        rewardText: '10% First Deposit Comm',
+        rewardUsd: 0,
+        rewardGhs: 0,
+        isAutomaticCommission: true,
         isUnlocked: fundedCount >= 1,
-        isClaimed: false,
-        canClaim: fundedCount >= 1,
+        isClaimed: fundedCount >= 1,
+        canClaim: false,
         color: '#D97706',
       },
       {
@@ -220,15 +221,20 @@ export class Team extends Component {
     ];
 
     const milestones = rawMilestones.map((m) => {
-      const isClaimed = Boolean(
-        m.isClaimed ||
-        userClaimedList.includes(m.id) ||
-        (m.id === 'bronze' && isAlienBronzeClaimed)
-      );
+      const isAuto = Boolean(m.isAutomaticCommission || m.id === 'bronze' || m.rewardGhs === 0);
+      const isClaimed = isAuto
+        ? (fundedCount >= m.requiredRefs)
+        : Boolean(
+            m.isClaimed ||
+            userClaimedList.includes(m.id) ||
+            (m.id === 'bronze' && isAlienBronzeClaimed)
+          );
       return {
         ...m,
+        isAutomatic: isAuto,
+        isUnlocked: fundedCount >= m.requiredRefs,
         isClaimed,
-        canClaim: m.isUnlocked && !isClaimed,
+        canClaim: !isAuto && fundedCount >= m.requiredRefs && !isClaimed,
       };
     });
 
@@ -416,7 +422,17 @@ export class Team extends Component {
 
                   {/* Reward Button / Claim Box */}
                   <div className="mt-3">
-                    {isClaimed ? (
+                    {m.isAutomatic ? (
+                      isEligible ? (
+                        <div className="w-full py-2.5 px-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between text-emerald-300 text-xs font-bold">
+                          <span className="flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            <span>10% First Deposit Comm Active</span>
+                          </span>
+                          <span className="text-[10px] text-emerald-400/80 uppercase font-mono">Auto-Credited</span>
+                        </div>
+                      ) : null
+                    ) : isClaimed ? (
                       <div className="w-full py-2.5 px-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between text-emerald-300 text-xs font-bold">
                         <span className="flex items-center gap-1.5">
                           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
