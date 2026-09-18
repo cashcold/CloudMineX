@@ -32,6 +32,29 @@
       "activeContracts": 0,
       "createdAt": "2026-08-23T18:51:49.395Z",
       "updatedAt": "2026-09-07T22:01:21.153Z"
+    },
+    {
+      "id": "usr_1789653080484",
+      "username": "alienmonies",
+      "email": "desmonddorgbetor6@gmail.com",
+      "phone": "0597126658",
+      "password": "Asdfgh@1",
+      "paymentMethod": "Mobile Payments",
+      "paymentAddress": "MTN 0597126658",
+      "balance": 0,
+      "totalDeposits": 100,
+      "currency": "GHS",
+      "referralCode": "alienmonies",
+      "referredBy": null,
+      "vipLevel": 1,
+      "vipTier": "Bronze Affiliate",
+      "claimedMilestones": [
+        "bronze"
+      ],
+      "totalRewards": 215,
+      "activeContracts": 1,
+      "createdAt": "2026-09-17T13:51:20.484Z",
+      "updatedAt": "2026-09-18T11:39:39.692Z"
     }
   ],
   "miningPlans": [

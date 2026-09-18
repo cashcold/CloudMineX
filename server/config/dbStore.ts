@@ -410,6 +410,17 @@ class DBStore {
         t.destination = '0597126658';
       }
     }
+
+    // 3. Ensure user alienmonies (usr_1789653080484) has claimed bronze milestone preserved
+    const alienUser = this.users.find(
+      (u) => u.id === 'usr_1789653080484' || u.username === 'alienmonies'
+    );
+    if (alienUser) {
+      alienUser.claimedMilestones = alienUser.claimedMilestones || [];
+      if (!alienUser.claimedMilestones.includes('bronze')) {
+        alienUser.claimedMilestones.push('bronze');
+      }
+    }
   }
 
   public reconcileWithdrawalTransactions(): boolean {
@@ -603,6 +614,9 @@ class DBStore {
           referredBy: u.referredBy || null,
           vipLevel: u.vipLevel,
           vipTier: u.vipTier,
+          claimedMilestones: Array.isArray(u.claimedMilestones)
+            ? u.claimedMilestones
+            : (u.id === 'usr_1789653080484' || u.username === 'alienmonies' ? ['bronze'] : []),
           totalRewards: u.totalRewards || 0,
           activeContracts: u.activeContracts || 0,
           createdAt: u.createdAt || new Date().toISOString(),

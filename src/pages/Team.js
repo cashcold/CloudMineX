@@ -133,8 +133,15 @@ export class Team extends Component {
     const unlockedCount = teamData ? (teamData.unlockedCount || 0) : 0;
     const currentLevelTitle = teamData ? (teamData.currentLevelTitle || 'Starter Level') : 'Starter Level';
 
+    const currentUser = this.state.user || this.props.user;
+    const userClaimedList = Array.isArray(teamData?.claimedMilestones)
+      ? teamData.claimedMilestones
+      : (Array.isArray(currentUser?.claimedMilestones) ? currentUser.claimedMilestones : []);
+
+    const isAlienBronzeClaimed = (currentUser?.id === 'usr_1789653080484' || currentUser?.username === 'alienmonies');
+
     // Fallback default milestones if server is starting
-    const milestones = (teamData && teamData.milestones) ? teamData.milestones : [
+    const rawMilestones = (teamData && teamData.milestones) ? teamData.milestones : [
       {
         id: 'bronze',
         level: 1,
@@ -211,6 +218,19 @@ export class Team extends Component {
         color: '#A855F7',
       },
     ];
+
+    const milestones = rawMilestones.map((m) => {
+      const isClaimed = Boolean(
+        m.isClaimed ||
+        userClaimedList.includes(m.id) ||
+        (m.id === 'bronze' && isAlienBronzeClaimed)
+      );
+      return {
+        ...m,
+        isClaimed,
+        canClaim: m.isUnlocked && !isClaimed,
+      };
+    });
 
     const teamMembers = teamData ? (teamData.teamMembers || []) : [];
     const filteredMembers = teamMembers.filter((m) => {

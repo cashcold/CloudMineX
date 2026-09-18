@@ -55,11 +55,24 @@ export class Withdraw extends Component {
   }
 
   async handleSubmitWithdrawal() {
-    const { user, amount, destination, provider } = this.state;
+    const { user, amount, destination, provider, withdrawals } = this.state;
     if (!user) return;
 
     if (!amount || Number(amount) <= 0) {
       this.setState({ errorMessage: 'Please enter a valid withdrawal amount.' });
+      return;
+    }
+
+    if (Number(amount) < 50) {
+      this.setState({ errorMessage: 'Minimum withdrawal amount is GHS 50.00.' });
+      return;
+    }
+
+    const hasPending = withdrawals.some((w) => w.status === 'pending');
+    if (hasPending) {
+      this.setState({
+        errorMessage: 'You already have an active pending withdrawal in processing. Please wait for Admin approval before submitting a new request.',
+      });
       return;
     }
 
@@ -200,12 +213,15 @@ export class Withdraw extends Component {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#94A3B8] uppercase block mb-2">
-              Withdrawal Amount (GHS)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-[#94A3B8] uppercase block">
+                Withdrawal Amount (GHS)
+              </label>
+              <span className="text-[10px] text-amber-400 font-bold uppercase">Min: GHS 50.00</span>
+            </div>
             <input
               type="number"
-              placeholder="e.g. 100.00"
+              placeholder="e.g. 100.00 (Minimum 50.00)"
               value={amount}
               onChange={(e) => this.setState({ amount: e.target.value })}
               className="w-full bg-[#0D1B2A] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
