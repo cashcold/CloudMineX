@@ -63,8 +63,8 @@ export class Withdraw extends Component {
       return;
     }
 
-    if (Number(amount) < 50) {
-      this.setState({ errorMessage: 'Minimum withdrawal amount is GHS 50.00.' });
+    if (Number(amount) < 10) {
+      this.setState({ errorMessage: 'Withdrawal Amount minimum is 10ghc.' });
       return;
     }
 
@@ -217,11 +217,11 @@ export class Withdraw extends Component {
               <label className="text-xs font-semibold text-[#94A3B8] uppercase block">
                 Withdrawal Amount (GHS)
               </label>
-              <span className="text-[10px] text-amber-400 font-bold uppercase">Min: GHS 50.00</span>
+              <span className="text-[10px] text-amber-400 font-bold uppercase">Min: GHS 10.00</span>
             </div>
             <input
               type="number"
-              placeholder="e.g. 100.00 (Minimum 50.00)"
+              placeholder="e.g. 50.00 (Minimum 10.00)"
               value={amount}
               onChange={(e) => this.setState({ amount: e.target.value })}
               className="w-full bg-[#0D1B2A] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"

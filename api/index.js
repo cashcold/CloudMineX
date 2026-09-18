@@ -2860,10 +2860,10 @@ var handleWithdrawal = async (req, res) => {
   if (!numAmount || numAmount <= 0) {
     return res.status(400).json({ success: false, message: "Enter a valid withdrawal amount" });
   }
-  if (numAmount < 50 && !req.body.bypassMinCheck) {
+  if (numAmount < 10 && !req.body.bypassMinCheck) {
     return res.status(400).json({
       success: false,
-      message: "Minimum withdrawal amount is GHS 50.00."
+      message: "Withdrawal Amount minimum is 10ghc."
     });
   }
   const existingPending = db.withdrawals.find(

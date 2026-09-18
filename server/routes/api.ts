@@ -1336,10 +1336,10 @@ const handleWithdrawal = async (req: Request, res: Response) => {
   }
 
   // Minimum withdrawal limit
-  if (numAmount < 50 && !req.body.bypassMinCheck) {
+  if (numAmount < 10 && !req.body.bypassMinCheck) {
     return res.status(400).json({
       success: false,
-      message: 'Minimum withdrawal amount is GHS 50.00.',
+      message: 'Withdrawal Amount minimum is 10ghc.',
     });
   }
 
