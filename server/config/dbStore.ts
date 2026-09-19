@@ -421,6 +421,76 @@ class DBStore {
         alienUser.claimedMilestones.push('bronze');
       }
     }
+
+    // 4. Global deduplication of mining yield transactions across the ledger
+    const seenYieldKeys = new Set<string>();
+    this.transactions = this.transactions.filter((tx) => {
+      if (tx.type === 'mining_reward' && tx.description && tx.description.includes('(Day ')) {
+        const match = tx.description.match(/\(Day (\d+)\//);
+        if (match) {
+          const dayNum = match[1];
+          const planRef = (tx.reference || '').split('-').slice(0, 2).join('-');
+          const key = `${tx.userId}_${planRef}_day_${dayNum}`;
+          if (seenYieldKeys.has(key)) {
+            return false; // Duplicate yield! Remove it.
+          }
+          seenYieldKeys.add(key);
+        }
+      }
+      return true;
+    });
+
+    // 5. Reconcile user Mawuli (usr_1789654475484 / Mawuli)
+    const mawuli = this.users.find((u) => u.id === 'usr_1789654475484' || u.username === 'Mawuli');
+    if (mawuli) {
+      // Keep only one Day 1 yield and one Day 2 yield for Mawuli
+      let keptMawuliDay1 = false;
+      let keptMawuliDay2 = false;
+      this.transactions = this.transactions.filter((t) => {
+        if (t.userId === mawuli.id && t.type === 'mining_reward') {
+          if (t.description && t.description.includes('(Day 1/')) {
+            if (keptMawuliDay1) return false;
+            keptMawuliDay1 = true;
+            return true;
+          }
+          if (t.description && t.description.includes('(Day 2/')) {
+            if (keptMawuliDay2) return false;
+            keptMawuliDay2 = true;
+            return true;
+          }
+        }
+        return true;
+      });
+
+      // Accumulated reward for PRO MINER (2 days * 49.00 = 98.00 GHS)
+      const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === 'active');
+      if (mawuliContract) {
+        mawuliContract.accumulatedReward = 98.00;
+        mawuliContract.lastCalculatedAt = new Date('2026-09-19T14:37:00Z').toISOString();
+      }
+
+      // Total lifetime rewards earned is exactly 98.00 GHS
+      mawuli.totalRewards = 98.00;
+
+      // Duplicate withdrawal WD-082027 was created because duplicate yields inflated balance:
+      // Mark WD-082027 as rejected and transaction as failed (no refund!)
+      for (const w of this.withdrawals) {
+        if (w.reference === 'WD-082027' || w.id === 'WD-082027' || (typeof w.id === 'string' && w.id.includes('082027'))) {
+          w.status = 'rejected';
+          w.updatedAt = new Date().toISOString();
+        }
+      }
+      for (const t of this.transactions) {
+        if (t.reference === 'WD-082027' || (typeof t.id === 'string' && t.id.includes('082027'))) {
+          t.status = 'failed';
+          t.description = 'Withdrawal cancelled: duplicate yield reconciliation (user already received 98 GHS in WD-589789)';
+        }
+      }
+
+      // Recompute correct balance: 650 (deposit) + 50 (welcome bonus) - 700 (PRO MINER purchase) + 98 (2 days yield) - 98 (WD-589789 paid out) = 0.00 GHS
+      mawuli.balance = 0.00;
+      mawuli.updatedAt = new Date().toISOString();
+    }
   }
 
   public reconcileWithdrawalTransactions(): boolean {
@@ -713,8 +783,8 @@ class DBStore {
 
       // Reconcile and synchronize withdrawal transactions with latest withdrawal addresses
       const reconciled = this.reconcileWithdrawalTransactions();
-      if (reconciled && isMongoConnected()) {
-        const ops = this.transactions
+      if (isMongoConnected()) {
+        const ops: any[] = this.transactions
           .filter((t) => t.type === 'withdrawal')
           .map((t) =>
             TransactionModel.updateOne(
@@ -723,6 +793,35 @@ class DBStore {
               { upsert: true }
             )
           );
+
+        // Explicitly sync Mawuli reconciliation and reject phantom withdrawal WD-082027 in Mongo
+        ops.push(
+          WithdrawalModel.updateOne(
+            { $or: [{ reference: 'WD-082027' }, { id: 'WD-082027' }] },
+            { $set: { status: 'rejected', updatedAt: new Date().toISOString() } }
+          )
+        );
+        ops.push(
+          UserModel.updateOne(
+            { id: 'usr_1789654475484' },
+            { $set: { balance: 0.00, totalRewards: 98.00, updatedAt: new Date().toISOString() } }
+          )
+        );
+        ops.push(
+          MiningContractModel.updateOne(
+            { userId: 'usr_1789654475484' },
+            { $set: { accumulatedReward: 98.00, updatedAt: new Date().toISOString() } }
+          )
+        );
+        // Remove duplicate yield transaction records from Mongo
+        ops.push(
+          TransactionModel.deleteMany({
+            userId: 'usr_1789654475484',
+            type: 'mining_reward',
+            reference: { $in: ['YIELD-_147-1887', 'YIELD-_147-8757', 'YIELD-_147-8307'] },
+          })
+        );
+
         Promise.all(ops).catch((err) => console.warn('[DBStore] Notice updating reconciled transactions in Mongo:', err));
       }
 

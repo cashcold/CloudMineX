@@ -8,7 +8,7 @@ import {
   WithdrawalCloudMineX,
   TransactionCloudMineX,
 } from '../config/dbStore';
-import { calculateEstimatedReward, processMiningYields } from '../services/rewardEngine';
+import { calculateEstimatedReward, processMiningYields, processMiningYieldsAsync } from '../services/rewardEngine';
 import { getCryptoRates, convertFiatToCrypto, getMarketTickers } from '../services/cryptoPriceService';
 import { mobileMoneyProvider } from '../services/payment/mobileMoneyProvider';
 import { cryptoProvider } from '../services/payment/cryptoProvider';
@@ -876,52 +876,29 @@ apiRouter.get('/mining/:id', (req: Request, res: Response) => {
   res.json({ success: true, contract });
 });
 
-// Trigger daily reward tick simulation / manual yield sync
-apiRouter.post('/mining/tick-rewards', (req: Request, res: Response) => {
+// Trigger daily reward tick simulation / manual yield sync (safely processes genuine elapsed cycles)
+apiRouter.post('/mining/tick-rewards', async (req: Request, res: Response) => {
   const { userId } = req.body;
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-  // First process any standard 24h cycles elapsed
-  const yieldResult = processMiningYields(userId);
+  // Process any legitimate 24h cycles elapsed with full idempotency
+  const yieldResult = await processMiningYieldsAsync(userId);
 
-  // If none elapsed, perform an instant 1-day simulation tick for testing
-  let forceTicked = 0;
-  if (yieldResult.creditedTotal === 0) {
-    const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'active');
-    activeContracts.forEach((cntr) => {
-      const dailyReward = cntr.estimatedDailyReward;
-      cntr.accumulatedReward = Number((cntr.accumulatedReward + dailyReward).toFixed(2));
-      forceTicked += dailyReward;
-
-      // Record reward transaction
-      db.transactions.unshift({
-        id: `tx_rw_${Date.now()}_${Math.floor(Math.random() * 100)}`,
-        userId: user.id,
-        type: 'mining_reward',
-        amount: dailyReward,
-        currency: 'GHS',
-        reference: `RW-${cntr.id.slice(-4)}-${Date.now().toString().slice(-4)}`,
-        description: `Daily Yield (24h Tick) - ${cntr.planName}`,
-        status: 'completed',
-        createdAt: new Date().toISOString(),
-      });
+  if (yieldResult.creditedTotal > 0) {
+    return res.json({
+      success: true,
+      message: `${yieldResult.creditedTotal.toFixed(2)} GHS 24h mining yield credited to balance!`,
+      totalTickedReward: yieldResult.creditedTotal,
+      user,
     });
-
-    if (forceTicked > 0) {
-      user.balance = Number((user.balance + forceTicked).toFixed(2));
-      user.totalRewards = Number((user.totalRewards + forceTicked).toFixed(2));
-      user.updatedAt = new Date().toISOString();
-      db.saveData();
-    }
   }
 
-  const totalCredited = yieldResult.creditedTotal > 0 ? yieldResult.creditedTotal : forceTicked;
-
+  // If no 24h cycle has elapsed yet, return cleanly WITHOUT artificially inflating balance
   res.json({
     success: true,
-    message: `${totalCredited.toFixed(2)} GHS 24h mining yield credited to balance!`,
-    totalTickedReward: totalCredited,
+    message: 'Your mining yield is already up to date. Next 24h cycle is in progress.',
+    totalTickedReward: 0,
     user,
   });
 });
@@ -2197,12 +2174,16 @@ apiRouter.post('/admin/withdrawals/:id/reject', (req: Request, res: Response) =>
   const withdrawal = db.withdrawals.find((w) => w.id === req.params.id);
   if (!withdrawal) return res.status(404).json({ success: false, message: 'Withdrawal not found' });
 
-  if (withdrawal.status !== 'approved') {
-    // Refund balance to user
-    const user = db.users.find((u) => u.id === withdrawal.userId);
-    if (user) {
-      user.balance = Number((user.balance + withdrawal.amount).toFixed(2));
-      user.updatedAt = new Date().toISOString();
+  const shouldRefund = req.body?.refund !== false && req.query?.noRefund !== 'true' && withdrawal.status !== 'rejected';
+
+  if (withdrawal.status !== 'approved' && withdrawal.status !== 'rejected') {
+    if (shouldRefund) {
+      // Refund balance to user
+      const user = db.users.find((u) => u.id === withdrawal.userId);
+      if (user) {
+        user.balance = Number((user.balance + withdrawal.amount).toFixed(2));
+        user.updatedAt = new Date().toISOString();
+      }
     }
   }
 
@@ -2211,10 +2192,19 @@ apiRouter.post('/admin/withdrawals/:id/reject', (req: Request, res: Response) =>
 
   // Find corresponding transaction
   const tx = db.transactions.find((t) => t.reference === withdrawal.reference);
-  if (tx) tx.status = 'failed';
+  if (tx) {
+    tx.status = 'failed';
+    if (!shouldRefund) {
+      tx.description = `Withdrawal rejected without refund (duplicate/phantom prevention)`;
+    }
+  }
 
   db.saveData();
-  res.json({ success: true, message: 'Withdrawal rejected and balance refunded', withdrawal });
+  res.json({
+    success: true,
+    message: shouldRefund ? 'Withdrawal rejected and balance refunded' : 'Withdrawal rejected without refund (duplicate prevention)',
+    withdrawal,
+  });
 });
 
 // Admin: Update Wallet Address / Destination by reference
