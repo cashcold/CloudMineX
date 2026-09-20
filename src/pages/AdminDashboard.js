@@ -31,6 +31,7 @@ export class AdminDashboard extends Component {
       isSendingTestTelegram: false,
       quickWdRef: 'WD-269663',
       quickWdDest: 'TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v',
+      quickDeleteWdRef: '',
       isSubmitting: false,
       message: '',
       errorMessage: '',
@@ -39,6 +40,7 @@ export class AdminDashboard extends Component {
     this.handleAdminLogout = this.handleAdminLogout.bind(this);
     this.handleQuickApproveByReference = this.handleQuickApproveByReference.bind(this);
     this.handleQuickUpdateWdByRef = this.handleQuickUpdateWdByRef.bind(this);
+    this.handleQuickDeleteWdByRef = this.handleQuickDeleteWdByRef.bind(this);
     this.startEditingWd = this.startEditingWd.bind(this);
     this.cancelEditingWd = this.cancelEditingWd.bind(this);
     this.saveWdDestination = this.saveWdDestination.bind(this);
@@ -129,6 +131,38 @@ export class AdminDashboard extends Component {
         this.loadAdminStats();
       } else {
         this.setState({ errorMessage: res.message || 'Failed to delete withdrawal.', isSubmitting: false });
+      }
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Failed to delete withdrawal.',
+        isSubmitting: false,
+      });
+    }
+  }
+
+  async handleQuickDeleteWdByRef(e) {
+    if (e) e.preventDefault();
+    const { quickDeleteWdRef } = this.state;
+    if (!quickDeleteWdRef || !quickDeleteWdRef.trim()) {
+      this.setState({ errorMessage: 'Please enter a withdrawal reference to delete (e.g. WD-082027).' });
+      return;
+    }
+    const ref = quickDeleteWdRef.trim();
+    if (typeof window !== 'undefined' && !window.confirm(`Are you sure you want to permanently delete withdrawal ${ref}? This will remove it completely from the dashboard and database.`)) {
+      return;
+    }
+    this.setState({ isSubmitting: true, errorMessage: '', message: '' });
+    try {
+      const res = await adminService.deleteWithdrawal(ref);
+      if (res.success) {
+        this.setState({
+          message: res.message || `Withdrawal ${ref} permanently deleted from database.`,
+          quickDeleteWdRef: '',
+          isSubmitting: false,
+        });
+        this.loadAdminStats();
+      } else {
+        this.setState({ errorMessage: res.message || 'Failed to delete withdrawal', isSubmitting: false });
       }
     } catch (err) {
       this.setState({
@@ -936,6 +970,46 @@ export class AdminDashboard extends Component {
               </form>
             </div>
 
+            {/* Quick Delete Withdrawal Record from Database Card */}
+            <div className="bg-[#10253A] p-4 rounded-2xl border border-rose-500/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Delete Withdrawal from Database & Dashboard
+                  </h3>
+                </div>
+                <span className="text-[10px] text-rose-400 font-bold bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/20">
+                  Permanent Purge
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                To delete a phantom, duplicate, or invalid withdrawal record permanently from the database and ledger, enter the reference number (e.g. <span className="font-mono text-rose-400 font-bold">WD-082027</span>) and confirm deletion.
+              </p>
+
+              <form onSubmit={this.handleQuickDeleteWdByRef} className="space-y-3 pt-1">
+                <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                  <div className="w-full sm:flex-1">
+                    <input
+                      type="text"
+                      value={this.state.quickDeleteWdRef}
+                      onChange={(e) => this.setState({ quickDeleteWdRef: e.target.value })}
+                      placeholder="e.g. WD-082027"
+                      className="w-full bg-[#07111F] border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-mono focus:border-rose-400 outline-none"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={this.state.isSubmitting}
+                    className="w-full sm:w-auto px-4 py-2 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/40 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>{this.state.isSubmitting ? 'Deleting...' : 'Delete from Database'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">User Withdrawal Requests</h3>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1083,10 +1157,11 @@ export class AdminDashboard extends Component {
                             <button
                               onClick={() => this.handleDeleteWithdrawal(wd)}
                               disabled={this.state.isSubmitting}
-                              className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition-all"
-                              title="Delete withdrawal record from database"
+                              className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                              title="Delete withdrawal record permanently from database"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                              <span>Delete</span>
                             </button>
                           )}
                         </div>

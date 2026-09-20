@@ -74,7 +74,7 @@
       "vipLevel": 1,
       "claimedMilestones": [],
       "createdAt": "2026-09-17T14:14:35.484Z",
-      "updatedAt": "2026-09-19T21:13:36.864Z"
+      "updatedAt": "2026-09-20T14:46:52.752Z"
     }
   ],
   "miningPlans": [
@@ -262,7 +262,7 @@
       "endDate": "2026-10-17T14:37:00.000Z",
       "lastCalculatedAt": "2026-09-19T14:37:00.000Z",
       "createdAt": "2026-09-17T14:37:46.147Z",
-      "updatedAt": "2026-09-19T21:13:36.864Z"
+      "updatedAt": "2026-09-20T14:46:52.751Z"
     }
   ],
   "deposits": [
@@ -397,21 +397,6 @@
       "updatedAt": "2026-09-19T15:59:00.000Z"
     },
     {
-      "id": "wd_082027",
-      "userId": "usr_1789654475484",
-      "type": "fiat",
-      "provider": "Telecel Cash",
-      "currency": "GHS",
-      "amount": 98,
-      "fee": 0,
-      "netAmount": 98,
-      "destination": "Telecel 0500394563",
-      "reference": "WD-082027",
-      "status": "rejected",
-      "createdAt": "2026-09-19T20:34:00.000Z",
-      "updatedAt": "2026-09-19T21:13:36.864Z"
-    },
-    {
       "id": "wd_1787604209057",
       "userId": "usr_1787511109395",
       "amount": 126,
@@ -425,6 +410,17 @@
     }
   ],
   "transactions": [
+    {
+      "id": "tx_yield_contract_1789655866147_d3",
+      "userId": "usr_1789654475484",
+      "type": "mining_reward",
+      "amount": 49,
+      "currency": "GHS",
+      "reference": "YIELD-866147-D3",
+      "description": "24h Daily Yield - PRO MINER (Day 3/30)",
+      "status": "completed",
+      "createdAt": "2026-09-20T14:37:00.000Z"
+    },
     {
       "id": "tx_yield_contract_1789655866147_d1",
       "userId": "usr_1789654475484",
@@ -458,18 +454,6 @@
       "destination": "Telecel 0500394563",
       "status": "completed",
       "createdAt": "2026-09-19T15:59:00.000Z"
-    },
-    {
-      "id": "tx_wd_082027",
-      "userId": "usr_1789654475484",
-      "type": "withdrawal",
-      "amount": 98,
-      "currency": "GHS",
-      "reference": "WD-082027",
-      "description": "Withdrawal cancelled: duplicate yield reconciliation (user already received 98 GHS in WD-589789)",
-      "destination": "Telecel 0500394563",
-      "status": "failed",
-      "createdAt": "2026-09-19T20:34:00.000Z"
     },
     {
       "id": "tx_dep_1789669033572",

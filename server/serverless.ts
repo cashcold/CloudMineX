@@ -60,7 +60,7 @@ let isInitialized = false;
 let lastYieldProcessingTime = 0;
 let lastMongoSyncTime = 0;
 const YIELD_PROCESSING_COOLDOWN = 60 * 1000; // 60 seconds
-const MONGO_SYNC_COOLDOWN = 10 * 1000; // 10 seconds
+const MONGO_SYNC_COOLDOWN = 60 * 1000; // 60 seconds cooldown to reduce concurrent queries on Atlas Free tier
 
 async function ensureServerlessInit() {
   const now = Date.now();

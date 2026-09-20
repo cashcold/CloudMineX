@@ -168,37 +168,91 @@ export const ReferralModel = mongoose.models.ReferralCloudMineX || mongoose.mode
 export const ChatMessageModel = mongoose.models.ChatMessageCloudMineX || mongoose.model<ChatMessageCloudMineX>('ChatMessageCloudMineX', chatMessageSchema);
 export const AppSettingsModel = mongoose.models.AppSettingsCloudMineX || mongoose.model<AppSettingsCloudMineX>('AppSettingsCloudMineX', appSettingsSchema);
 
-let isConnected = false;
+interface MongooseCache {
+  conn: typeof mongoose | null;
+  promise: Promise<typeof mongoose> | null;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __cloudminex_mongoose: MongooseCache | undefined;
+}
+
+let cached: MongooseCache = globalThis.__cloudminex_mongoose || { conn: null, promise: null };
+if (!globalThis.__cloudminex_mongoose) {
+  globalThis.__cloudminex_mongoose = cached;
+}
 
 export async function connectMongoDB(): Promise<boolean> {
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-  if (!mongoUri) {
+  const rawUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!rawUri) {
     return false;
   }
 
-  if (isConnected && mongoose.connection.readyState === 1) return true;
+  // 1. If connection is already open and ready, reuse it immediately
+  if ((mongoose.connection.readyState as number) === 1) {
+    cached.conn = mongoose;
+    return true;
+  }
+
+  // 2. If a connection attempt is in-flight, await the existing promise rather than opening another socket
+  if (cached.promise && (mongoose.connection.readyState as number) === 2) {
+    try {
+      await cached.promise;
+      return (mongoose.connection.readyState as number) === 1;
+    } catch {
+      // Fall through to retry below
+    }
+  }
 
   try {
-    console.log('[MongoDB] Connecting to MongoDB cluster (Database: CloudMineX)...');
-    await mongoose.connect(mongoUri, {
-      dbName: process.env.MONGODB_DB_NAME || 'CloudMineX',
-      serverSelectionTimeoutMS: 5000,
-    });
-    isConnected = true;
-    console.log('----------------------------------------------------');
-    console.log('🚀 [MongoDB] Successfully connected to CloudMineX MongoDB database!');
-    console.log('----------------------------------------------------');
-    return true;
+    // Inject connection pooling query params into URI if not explicitly defined
+    let mongoUri = rawUri;
+    if (!mongoUri.includes('maxPoolSize')) {
+      const sep = mongoUri.includes('?') ? '&' : '?';
+      mongoUri = `${mongoUri}${sep}maxPoolSize=10&maxIdleTimeMS=10000`;
+    }
+
+    console.log('[MongoDB] Establishing pooled connection (maxPoolSize=10, maxIdleTimeMS=10000)...');
+
+    cached.promise = mongoose
+      .connect(mongoUri, {
+        dbName: process.env.MONGODB_DB_NAME || 'CloudMineX',
+        maxPoolSize: 10,        // Caps connection pool at 10 sockets max per instance (default was 100)
+        minPoolSize: 0,         // Do not keep idle sockets open
+        maxIdleTimeMS: 10000,   // Close idle connections after 10 seconds to free Atlas Free tier connection slots
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 20000,
+        connectTimeoutMS: 10000,
+        autoIndex: false,
+      })
+      .then((m) => {
+        cached.conn = m;
+        console.log('----------------------------------------------------');
+        console.log('🚀 [MongoDB] Successfully connected to CloudMineX cluster with optimized connection pooling!');
+        console.log('----------------------------------------------------');
+        return m;
+      });
+
+    await cached.promise;
+    return (mongoose.connection.readyState as number) === 1;
   } catch (err: any) {
-    isConnected = false;
+    cached.promise = null;
+    cached.conn = null;
     console.error('❌ [MongoDB] Connection error:', err.message || err);
     return false;
   }
 }
 
 export function isMongoConnected(): boolean {
-  return mongoose.connection.readyState === 1;
+  return (mongoose.connection.readyState as number) === 1;
 }
+
+// Reset cache if connection closes or drops
+mongoose.connection.on('disconnected', () => {
+  cached.conn = null;
+  cached.promise = null;
+});
 
 /**
  * Reads all withdrawals from MongoDB, checking both the Mongoose collection
@@ -243,10 +297,17 @@ export async function getUnifiedMongoWithdrawals(): Promise<WithdrawalCloudMineX
     console.warn('[MongoDB] Unified withdrawal fetch notice:', err);
   }
 
-  // Filter out any explicitly deleted withdrawal (such as WD-057295)
+  // Filter out any explicitly deleted withdrawal (such as WD-057295 or duplicate WD-082027)
   const result: WithdrawalCloudMineX[] = [];
   for (const w of withdrawalMap.values()) {
-    if (w.reference === 'WD-057295' || w.id === 'WD-057295' || (typeof w.id === 'string' && w.id.includes('057295'))) {
+    if (
+      w.reference === 'WD-057295' ||
+      w.id === 'WD-057295' ||
+      (typeof w.id === 'string' && w.id.includes('057295')) ||
+      w.reference === 'WD-082027' ||
+      w.id === 'WD-082027' ||
+      (typeof w.id === 'string' && w.id.includes('082027'))
+    ) {
       continue;
     }
     // Ensure WD-215628 has updated amount of GHS 65.00

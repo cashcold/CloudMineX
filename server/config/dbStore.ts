@@ -388,12 +388,24 @@ class DBStore {
   }
 
   public cleanupSpecificRecords() {
-    // 1. Permanently purge deleted withdrawal WD-057295 and any associated transactions
+    // 1. Permanently purge deleted withdrawals WD-057295, WD-082027 and any associated transactions
     this.withdrawals = this.withdrawals.filter(
-      (w) => w.reference !== 'WD-057295' && w.id !== 'WD-057295' && !(typeof w.id === 'string' && w.id.includes('057295'))
+      (w) =>
+        w.reference !== 'WD-057295' &&
+        w.id !== 'WD-057295' &&
+        !(typeof w.id === 'string' && w.id.includes('057295')) &&
+        w.reference !== 'WD-082027' &&
+        w.id !== 'WD-082027' &&
+        !(typeof w.id === 'string' && w.id.includes('082027'))
     );
     this.transactions = this.transactions.filter(
-      (t) => t.reference !== 'WD-057295' && !(typeof t.id === 'string' && t.id.includes('057295')) && !(t.description && t.description.includes('057295'))
+      (t) =>
+        t.reference !== 'WD-057295' &&
+        !(typeof t.id === 'string' && t.id.includes('057295')) &&
+        !(t.description && t.description.includes('057295')) &&
+        t.reference !== 'WD-082027' &&
+        !(typeof t.id === 'string' && t.id.includes('082027')) &&
+        !(t.description && t.description.includes('082027'))
     );
 
     // 2. Ensure updated withdrawal WD-215628 amount is set to GHS 65.00
@@ -471,21 +483,6 @@ class DBStore {
 
       // Total lifetime rewards earned is exactly 98.00 GHS
       mawuli.totalRewards = 98.00;
-
-      // Duplicate withdrawal WD-082027 was created because duplicate yields inflated balance:
-      // Mark WD-082027 as rejected and transaction as failed (no refund!)
-      for (const w of this.withdrawals) {
-        if (w.reference === 'WD-082027' || w.id === 'WD-082027' || (typeof w.id === 'string' && w.id.includes('082027'))) {
-          w.status = 'rejected';
-          w.updatedAt = new Date().toISOString();
-        }
-      }
-      for (const t of this.transactions) {
-        if (t.reference === 'WD-082027' || (typeof t.id === 'string' && t.id.includes('082027'))) {
-          t.status = 'failed';
-          t.description = 'Withdrawal cancelled: duplicate yield reconciliation (user already received 98 GHS in WD-589789)';
-        }
-      }
 
       // Recompute correct balance: 650 (deposit) + 50 (welcome bonus) - 700 (PRO MINER purchase) + 98 (2 days yield) - 98 (WD-589789 paid out) = 0.00 GHS
       mawuli.balance = 0.00;
@@ -611,6 +608,7 @@ class DBStore {
       this.cleanupSpecificRecords();
       const { deleteWithdrawalFromMongo } = await import('./dbMongo');
       deleteWithdrawalFromMongo('WD-057295').catch(() => {});
+      deleteWithdrawalFromMongo('WD-082027').catch(() => {});
 
       if (this.withdrawals.length > 0) {
         ops.push(...this.withdrawals.map((w) => WithdrawalModel.updateOne({ id: w.id }, { $set: w }, { upsert: true })));
@@ -794,12 +792,16 @@ class DBStore {
             )
           );
 
-        // Explicitly sync Mawuli reconciliation and reject phantom withdrawal WD-082027 in Mongo
+        // Explicitly permanently delete phantom withdrawal WD-082027 and its transaction in Mongo
         ops.push(
-          WithdrawalModel.updateOne(
-            { $or: [{ reference: 'WD-082027' }, { id: 'WD-082027' }] },
-            { $set: { status: 'rejected', updatedAt: new Date().toISOString() } }
-          )
+          WithdrawalModel.deleteMany({
+            $or: [{ reference: 'WD-082027' }, { id: 'WD-082027' }, { id: { $regex: '082027' } }],
+          })
+        );
+        ops.push(
+          TransactionModel.deleteMany({
+            $or: [{ reference: 'WD-082027' }, { id: { $regex: '082027' } }, { description: { $regex: '082027' } }],
+          })
         );
         ops.push(
           UserModel.updateOne(

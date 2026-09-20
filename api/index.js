@@ -28,24 +28,52 @@ __export(dbMongo_exports, {
 });
 import mongoose, { Schema } from "mongoose";
 async function connectMongoDB() {
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-  if (!mongoUri) {
+  const rawUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!rawUri) {
     return false;
   }
-  if (isConnected && mongoose.connection.readyState === 1) return true;
-  try {
-    console.log("[MongoDB] Connecting to MongoDB cluster (Database: CloudMineX)...");
-    await mongoose.connect(mongoUri, {
-      dbName: process.env.MONGODB_DB_NAME || "CloudMineX",
-      serverSelectionTimeoutMS: 5e3
-    });
-    isConnected = true;
-    console.log("----------------------------------------------------");
-    console.log("\u{1F680} [MongoDB] Successfully connected to CloudMineX MongoDB database!");
-    console.log("----------------------------------------------------");
+  if (mongoose.connection.readyState === 1) {
+    cached.conn = mongoose;
     return true;
+  }
+  if (cached.promise && mongoose.connection.readyState === 2) {
+    try {
+      await cached.promise;
+      return mongoose.connection.readyState === 1;
+    } catch {
+    }
+  }
+  try {
+    let mongoUri = rawUri;
+    if (!mongoUri.includes("maxPoolSize")) {
+      const sep = mongoUri.includes("?") ? "&" : "?";
+      mongoUri = `${mongoUri}${sep}maxPoolSize=10&maxIdleTimeMS=10000`;
+    }
+    console.log("[MongoDB] Establishing pooled connection (maxPoolSize=10, maxIdleTimeMS=10000)...");
+    cached.promise = mongoose.connect(mongoUri, {
+      dbName: process.env.MONGODB_DB_NAME || "CloudMineX",
+      maxPoolSize: 10,
+      // Caps connection pool at 10 sockets max per instance (default was 100)
+      minPoolSize: 0,
+      // Do not keep idle sockets open
+      maxIdleTimeMS: 1e4,
+      // Close idle connections after 10 seconds to free Atlas Free tier connection slots
+      serverSelectionTimeoutMS: 5e3,
+      socketTimeoutMS: 2e4,
+      connectTimeoutMS: 1e4,
+      autoIndex: false
+    }).then((m) => {
+      cached.conn = m;
+      console.log("----------------------------------------------------");
+      console.log("\u{1F680} [MongoDB] Successfully connected to CloudMineX cluster with optimized connection pooling!");
+      console.log("----------------------------------------------------");
+      return m;
+    });
+    await cached.promise;
+    return mongoose.connection.readyState === 1;
   } catch (err) {
-    isConnected = false;
+    cached.promise = null;
+    cached.conn = null;
     console.error("\u274C [MongoDB] Connection error:", err.message || err);
     return false;
   }
@@ -85,7 +113,7 @@ async function getUnifiedMongoWithdrawals() {
   }
   const result = [];
   for (const w of withdrawalMap.values()) {
-    if (w.reference === "WD-057295" || w.id === "WD-057295" || typeof w.id === "string" && w.id.includes("057295")) {
+    if (w.reference === "WD-057295" || w.id === "WD-057295" || typeof w.id === "string" && w.id.includes("057295") || w.reference === "WD-082027" || w.id === "WD-082027" || typeof w.id === "string" && w.id.includes("082027")) {
       continue;
     }
     if (w.reference === "WD-215628" || w.id === "WD-215628" || typeof w.id === "string" && w.id.includes("215628")) {
@@ -197,7 +225,7 @@ async function updateWithdrawalAmountInMongo(idOrRef, newAmount) {
     return false;
   }
 }
-var userSchema, miningPlanSchema, miningContractSchema, depositSchema, withdrawalSchema, transactionSchema, referralSchema, chatMessageSchema, appSettingsSchema, UserModel, MiningPlanModel, MiningContractModel, DepositModel, WithdrawalModel, TransactionModel, ReferralModel, ChatMessageModel, AppSettingsModel, isConnected;
+var userSchema, miningPlanSchema, miningContractSchema, depositSchema, withdrawalSchema, transactionSchema, referralSchema, chatMessageSchema, appSettingsSchema, UserModel, MiningPlanModel, MiningContractModel, DepositModel, WithdrawalModel, TransactionModel, ReferralModel, ChatMessageModel, AppSettingsModel, cached;
 var init_dbMongo = __esm({
   "server/config/dbMongo.ts"() {
     userSchema = new Schema({
@@ -346,7 +374,14 @@ var init_dbMongo = __esm({
     ReferralModel = mongoose.models.ReferralCloudMineX || mongoose.model("ReferralCloudMineX", referralSchema);
     ChatMessageModel = mongoose.models.ChatMessageCloudMineX || mongoose.model("ChatMessageCloudMineX", chatMessageSchema);
     AppSettingsModel = mongoose.models.AppSettingsCloudMineX || mongoose.model("AppSettingsCloudMineX", appSettingsSchema);
-    isConnected = false;
+    cached = globalThis.__cloudminex_mongoose || { conn: null, promise: null };
+    if (!globalThis.__cloudminex_mongoose) {
+      globalThis.__cloudminex_mongoose = cached;
+    }
+    mongoose.connection.on("disconnected", () => {
+      cached.conn = null;
+      cached.promise = null;
+    });
   }
 });
 
@@ -574,10 +609,10 @@ var DBStore = class {
   }
   cleanupSpecificRecords() {
     this.withdrawals = this.withdrawals.filter(
-      (w) => w.reference !== "WD-057295" && w.id !== "WD-057295" && !(typeof w.id === "string" && w.id.includes("057295"))
+      (w) => w.reference !== "WD-057295" && w.id !== "WD-057295" && !(typeof w.id === "string" && w.id.includes("057295")) && w.reference !== "WD-082027" && w.id !== "WD-082027" && !(typeof w.id === "string" && w.id.includes("082027"))
     );
     this.transactions = this.transactions.filter(
-      (t) => t.reference !== "WD-057295" && !(typeof t.id === "string" && t.id.includes("057295")) && !(t.description && t.description.includes("057295"))
+      (t) => t.reference !== "WD-057295" && !(typeof t.id === "string" && t.id.includes("057295")) && !(t.description && t.description.includes("057295")) && t.reference !== "WD-082027" && !(typeof t.id === "string" && t.id.includes("082027")) && !(t.description && t.description.includes("082027"))
     );
     for (const w of this.withdrawals) {
       if (w.reference === "WD-215628" || w.id === "WD-215628" || typeof w.id === "string" && w.id.includes("215628")) {
@@ -600,6 +635,50 @@ var DBStore = class {
       if (!alienUser.claimedMilestones.includes("bronze")) {
         alienUser.claimedMilestones.push("bronze");
       }
+    }
+    const seenYieldKeys = /* @__PURE__ */ new Set();
+    this.transactions = this.transactions.filter((tx) => {
+      if (tx.type === "mining_reward" && tx.description && tx.description.includes("(Day ")) {
+        const match = tx.description.match(/\(Day (\d+)\//);
+        if (match) {
+          const dayNum = match[1];
+          const planRef = (tx.reference || "").split("-").slice(0, 2).join("-");
+          const key = `${tx.userId}_${planRef}_day_${dayNum}`;
+          if (seenYieldKeys.has(key)) {
+            return false;
+          }
+          seenYieldKeys.add(key);
+        }
+      }
+      return true;
+    });
+    const mawuli = this.users.find((u) => u.id === "usr_1789654475484" || u.username === "Mawuli");
+    if (mawuli) {
+      let keptMawuliDay1 = false;
+      let keptMawuliDay2 = false;
+      this.transactions = this.transactions.filter((t) => {
+        if (t.userId === mawuli.id && t.type === "mining_reward") {
+          if (t.description && t.description.includes("(Day 1/")) {
+            if (keptMawuliDay1) return false;
+            keptMawuliDay1 = true;
+            return true;
+          }
+          if (t.description && t.description.includes("(Day 2/")) {
+            if (keptMawuliDay2) return false;
+            keptMawuliDay2 = true;
+            return true;
+          }
+        }
+        return true;
+      });
+      const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === "active");
+      if (mawuliContract) {
+        mawuliContract.accumulatedReward = 98;
+        mawuliContract.lastCalculatedAt = (/* @__PURE__ */ new Date("2026-09-19T14:37:00Z")).toISOString();
+      }
+      mawuli.totalRewards = 98;
+      mawuli.balance = 0;
+      mawuli.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     }
   }
   reconcileWithdrawalTransactions() {
@@ -688,6 +767,8 @@ var DBStore = class {
       this.cleanupSpecificRecords();
       const { deleteWithdrawalFromMongo: deleteWithdrawalFromMongo2 } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
       deleteWithdrawalFromMongo2("WD-057295").catch(() => {
+      });
+      deleteWithdrawalFromMongo2("WD-082027").catch(() => {
       });
       if (this.withdrawals.length > 0) {
         ops.push(...this.withdrawals.map((w) => WithdrawalModel2.updateOne({ id: w.id }, { $set: w }, { upsert: true })));
@@ -837,13 +918,42 @@ var DBStore = class {
         }));
       }
       const reconciled = this.reconcileWithdrawalTransactions();
-      if (reconciled && isMongoConnected2()) {
+      if (isMongoConnected2()) {
         const ops = this.transactions.filter((t) => t.type === "withdrawal").map(
           (t) => TransactionModel2.updateOne(
             { id: t.id },
             { $set: { description: t.description, destination: t.destination, status: t.status, amount: t.amount } },
             { upsert: true }
           )
+        );
+        ops.push(
+          WithdrawalModel2.deleteMany({
+            $or: [{ reference: "WD-082027" }, { id: "WD-082027" }, { id: { $regex: "082027" } }]
+          })
+        );
+        ops.push(
+          TransactionModel2.deleteMany({
+            $or: [{ reference: "WD-082027" }, { id: { $regex: "082027" } }, { description: { $regex: "082027" } }]
+          })
+        );
+        ops.push(
+          UserModel2.updateOne(
+            { id: "usr_1789654475484" },
+            { $set: { balance: 0, totalRewards: 98, updatedAt: (/* @__PURE__ */ new Date()).toISOString() } }
+          )
+        );
+        ops.push(
+          MiningContractModel2.updateOne(
+            { userId: "usr_1789654475484" },
+            { $set: { accumulatedReward: 98, updatedAt: (/* @__PURE__ */ new Date()).toISOString() } }
+          )
+        );
+        ops.push(
+          TransactionModel2.deleteMany({
+            userId: "usr_1789654475484",
+            type: "mining_reward",
+            reference: { $in: ["YIELD-_147-1887", "YIELD-_147-8757", "YIELD-_147-8307"] }
+          })
         );
         Promise.all(ops).catch((err) => console.warn("[DBStore] Notice updating reconciled transactions in Mongo:", err));
       }
@@ -1171,6 +1281,49 @@ var db = new DBStore();
 
 // server/services/rewardEngine.ts
 init_dbMongo();
+async function syncYieldsToMongo(updatedUserIds, updatedContracts, createdTransactions) {
+  if (!isMongoConnected()) return;
+  try {
+    const userOps = Array.from(updatedUserIds).map((uid) => {
+      const u = db.users.find((user) => user.id === uid);
+      if (!u) return Promise.resolve();
+      return UserModel.updateOne(
+        { id: u.id },
+        {
+          $set: {
+            balance: u.balance,
+            totalRewards: u.totalRewards,
+            activeContracts: u.activeContracts,
+            updatedAt: u.updatedAt
+          }
+        }
+      );
+    });
+    const contractOps = updatedContracts.map(
+      (cntr) => MiningContractModel.updateOne(
+        { id: cntr.id },
+        {
+          $set: {
+            accumulatedReward: cntr.accumulatedReward,
+            lastCalculatedAt: cntr.lastCalculatedAt,
+            status: cntr.status,
+            updatedAt: cntr.updatedAt
+          }
+        }
+      )
+    );
+    const txOps = createdTransactions.map(
+      (tx) => TransactionModel.updateOne(
+        { id: tx.id },
+        { $set: tx },
+        { upsert: true }
+      )
+    );
+    await Promise.all([...userOps, ...contractOps, ...txOps]);
+  } catch (err) {
+    console.error("[MongoDB] Mining yield sync error:", err);
+  }
+}
 function processMiningYields(targetUserId) {
   const now = Date.now();
   const ONE_DAY_MS = 24 * 60 * 60 * 1e3;
@@ -1191,40 +1344,61 @@ function processMiningYields(targetUserId) {
     const dailyReward = contract.estimatedDailyReward || Number((contract.amount * (contract.rewardRate || 0.06)).toFixed(2));
     const elapsedTotalMs = Math.max(0, now - startMs);
     const totalDaysPassed = Math.floor(elapsedTotalMs / ONE_DAY_MS);
-    const alreadyCreditedDays = Math.min(maxDays, Math.floor(((contract.accumulatedReward || 0) + 1e-4) / (dailyReward || 1)));
     const targetDaysCredited = Math.min(totalDaysPassed, maxDays);
-    const actualDaysToCredit = Math.max(0, targetDaysCredited - alreadyCreditedDays);
-    if (actualDaysToCredit > 0) {
-      const rewardToAdd = Number((actualDaysToCredit * dailyReward).toFixed(2));
-      contract.accumulatedReward = Number(((contract.accumulatedReward || 0) + rewardToAdd).toFixed(2));
-      contract.lastCalculatedAt = new Date(startMs + (alreadyCreditedDays + actualDaysToCredit) * ONE_DAY_MS).toISOString();
-      contract.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      user.balance = Number((user.balance + rewardToAdd).toFixed(2));
-      user.totalRewards = Number(((user.totalRewards || 0) + rewardToAdd).toFixed(2));
+    let contractCreditedCount = 0;
+    let newDaysCredited = 0;
+    for (let day = 1; day <= targetDaysCredited; day++) {
+      const deterministicId = `tx_yield_${contract.id}_d${day}`;
+      const deterministicRef = `YIELD-${contract.id.slice(-6)}-D${day}`;
+      const alreadyCredited = db.transactions.some((t) => {
+        if (t.userId !== user.id || t.type !== "mining_reward") return false;
+        if (t.id === deterministicId || t.reference === deterministicRef) return true;
+        if (t.description) {
+          const isContractPlan = t.description.includes(contract.planName) || t.reference && t.reference.includes(contract.id.slice(-4));
+          if (isContractPlan && (t.description.includes(`(Day ${day}/`) || t.description.includes(`(Day ${day} of `) || t.description.includes(`Day ${day}/${maxDays}`))) {
+            return true;
+          }
+        }
+        return false;
+      });
+      if (alreadyCredited) {
+        contractCreditedCount++;
+        continue;
+      }
+      const txTime = new Date(startMs + day * ONE_DAY_MS).toISOString();
+      const newTx = {
+        id: deterministicId,
+        userId: user.id,
+        type: "mining_reward",
+        amount: dailyReward,
+        currency: user.currency || "GHS",
+        reference: deterministicRef,
+        description: `24h Daily Yield - ${contract.planName} (Day ${day}/${maxDays})`,
+        status: "completed",
+        createdAt: txTime
+      };
+      db.transactions.unshift(newTx);
+      createdTransactions.push(newTx);
+      user.balance = Number((user.balance + dailyReward).toFixed(2));
+      user.totalRewards = Number(((user.totalRewards || 0) + dailyReward).toFixed(2));
       user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      creditedTotal += rewardToAdd;
+      creditedTotal += dailyReward;
+      newDaysCredited++;
+      contractCreditedCount++;
+    }
+    const correctAccumulatedReward = Number((contractCreditedCount * dailyReward).toFixed(2));
+    if (newDaysCredited > 0 || contract.accumulatedReward !== correctAccumulatedReward) {
+      contract.accumulatedReward = correctAccumulatedReward;
+      contract.lastCalculatedAt = new Date(startMs + contractCreditedCount * ONE_DAY_MS).toISOString();
+      contract.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
       contractsUpdated++;
       hasDbChanges = true;
       updatedUserIds.add(user.id);
-      updatedContracts.push(contract);
-      for (let dayIndex = 1; dayIndex <= actualDaysToCredit; dayIndex++) {
-        const txTime = new Date(startMs + (alreadyCreditedDays + dayIndex) * ONE_DAY_MS).toISOString();
-        const newTx = {
-          id: `tx_yield_${Date.now()}_${Math.floor(Math.random() * 1e3)}_${dayIndex}`,
-          userId: user.id,
-          type: "mining_reward",
-          amount: dailyReward,
-          currency: user.currency || "GHS",
-          reference: `YIELD-${contract.id.slice(-4)}-${Date.now().toString().slice(-4)}`,
-          description: `24h Daily Yield - ${contract.planName} (Day ${alreadyCreditedDays + dayIndex}/${maxDays})`,
-          status: "completed",
-          createdAt: txTime
-        };
-        db.transactions.unshift(newTx);
-        createdTransactions.push(newTx);
+      if (!updatedContracts.includes(contract)) {
+        updatedContracts.push(contract);
       }
     }
-    const isMatured = now >= endMs || (contract.accumulatedReward || 0) >= (contract.estimatedTotalReward || dailyReward * maxDays);
+    const isMatured = now >= endMs || contractCreditedCount >= maxDays || (contract.accumulatedReward || 0) >= (contract.estimatedTotalReward || dailyReward * maxDays);
     if (isMatured && contract.status === "active") {
       contract.status = "completed";
       contract.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -1237,59 +1411,36 @@ function processMiningYields(targetUserId) {
       if (!updatedContracts.includes(contract)) {
         updatedContracts.push(contract);
       }
-      const matureTx = {
-        id: `tx_mature_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
-        userId: user.id,
-        type: "mining_reward",
-        amount: 0,
-        currency: user.currency || "GHS",
-        reference: `MATURE-${contract.id.slice(-4)}`,
-        description: `Contract Matured: ${contract.planName} (${maxDays} Days Full Cycle Completed)`,
-        status: "completed",
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      db.transactions.unshift(matureTx);
-      createdTransactions.push(matureTx);
+      const matureId = `tx_mature_${contract.id}`;
+      const matureExists = db.transactions.some((t) => t.id === matureId || t.reference === `MATURE-${contract.id.slice(-4)}`);
+      if (!matureExists) {
+        const matureTx = {
+          id: matureId,
+          userId: user.id,
+          type: "mining_reward",
+          amount: 0,
+          currency: user.currency || "GHS",
+          reference: `MATURE-${contract.id.slice(-4)}`,
+          description: `Contract Matured: ${contract.planName} (${maxDays} Days Full Cycle Completed)`,
+          status: "completed",
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        db.transactions.unshift(matureTx);
+        createdTransactions.push(matureTx);
+      }
     }
   }
   if (hasDbChanges) {
     db.saveData();
-    if (isMongoConnected()) {
-      for (const uid of updatedUserIds) {
-        const u = db.users.find((user) => user.id === uid);
-        if (u) {
-          UserModel.updateOne(
-            { id: u.id },
-            {
-              $set: {
-                balance: u.balance,
-                totalRewards: u.totalRewards,
-                activeContracts: u.activeContracts,
-                updatedAt: u.updatedAt
-              }
-            }
-          ).catch((e) => console.error("[MongoDB] Mining yield user sync error:", e));
-        }
-      }
-      for (const cntr of updatedContracts) {
-        MiningContractModel.updateOne(
-          { id: cntr.id },
-          {
-            $set: {
-              accumulatedReward: cntr.accumulatedReward,
-              lastCalculatedAt: cntr.lastCalculatedAt,
-              status: cntr.status,
-              updatedAt: cntr.updatedAt
-            }
-          }
-        ).catch((e) => console.error("[MongoDB] Mining yield contract sync error:", e));
-      }
-      for (const tx of createdTransactions) {
-        TransactionModel.create(tx).catch((e) => console.error("[MongoDB] Mining yield tx sync error:", e));
-      }
-    }
+    syncYieldsToMongo(updatedUserIds, updatedContracts, createdTransactions).catch(
+      (err) => console.error("[MongoDB] Background yield sync notice:", err)
+    );
   }
   return { creditedTotal, contractsUpdated, contractsCompleted };
+}
+async function processMiningYieldsAsync(targetUserId) {
+  const result = processMiningYields(targetUserId);
+  return result;
 }
 
 // server/services/cryptoPriceService.ts
@@ -2474,42 +2625,23 @@ apiRouter.get("/mining/:id", (req, res) => {
   }
   res.json({ success: true, contract });
 });
-apiRouter.post("/mining/tick-rewards", (req, res) => {
+apiRouter.post("/mining/tick-rewards", async (req, res) => {
   const { userId } = req.body;
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: "User not found" });
-  const yieldResult = processMiningYields(userId);
-  let forceTicked = 0;
-  if (yieldResult.creditedTotal === 0) {
-    const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === "active");
-    activeContracts.forEach((cntr) => {
-      const dailyReward = cntr.estimatedDailyReward;
-      cntr.accumulatedReward = Number((cntr.accumulatedReward + dailyReward).toFixed(2));
-      forceTicked += dailyReward;
-      db.transactions.unshift({
-        id: `tx_rw_${Date.now()}_${Math.floor(Math.random() * 100)}`,
-        userId: user.id,
-        type: "mining_reward",
-        amount: dailyReward,
-        currency: "GHS",
-        reference: `RW-${cntr.id.slice(-4)}-${Date.now().toString().slice(-4)}`,
-        description: `Daily Yield (24h Tick) - ${cntr.planName}`,
-        status: "completed",
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      });
+  const yieldResult = await processMiningYieldsAsync(userId);
+  if (yieldResult.creditedTotal > 0) {
+    return res.json({
+      success: true,
+      message: `${yieldResult.creditedTotal.toFixed(2)} GHS 24h mining yield credited to balance!`,
+      totalTickedReward: yieldResult.creditedTotal,
+      user
     });
-    if (forceTicked > 0) {
-      user.balance = Number((user.balance + forceTicked).toFixed(2));
-      user.totalRewards = Number((user.totalRewards + forceTicked).toFixed(2));
-      user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      db.saveData();
-    }
   }
-  const totalCredited = yieldResult.creditedTotal > 0 ? yieldResult.creditedTotal : forceTicked;
   res.json({
     success: true,
-    message: `${totalCredited.toFixed(2)} GHS 24h mining yield credited to balance!`,
-    totalTickedReward: totalCredited,
+    message: "Your mining yield is already up to date. Next 24h cycle is in progress.",
+    totalTickedReward: 0,
     user
   });
 });
@@ -3577,19 +3709,31 @@ apiRouter.post("/admin/withdrawals/:id/approve", (req, res) => {
 apiRouter.post("/admin/withdrawals/:id/reject", (req, res) => {
   const withdrawal = db.withdrawals.find((w) => w.id === req.params.id);
   if (!withdrawal) return res.status(404).json({ success: false, message: "Withdrawal not found" });
-  if (withdrawal.status !== "approved") {
-    const user = db.users.find((u) => u.id === withdrawal.userId);
-    if (user) {
-      user.balance = Number((user.balance + withdrawal.amount).toFixed(2));
-      user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const shouldRefund = req.body?.refund !== false && req.query?.noRefund !== "true" && withdrawal.status !== "rejected";
+  if (withdrawal.status !== "approved" && withdrawal.status !== "rejected") {
+    if (shouldRefund) {
+      const user = db.users.find((u) => u.id === withdrawal.userId);
+      if (user) {
+        user.balance = Number((user.balance + withdrawal.amount).toFixed(2));
+        user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      }
     }
   }
   withdrawal.status = "rejected";
   withdrawal.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   const tx = db.transactions.find((t) => t.reference === withdrawal.reference);
-  if (tx) tx.status = "failed";
+  if (tx) {
+    tx.status = "failed";
+    if (!shouldRefund) {
+      tx.description = `Withdrawal rejected without refund (duplicate/phantom prevention)`;
+    }
+  }
   db.saveData();
-  res.json({ success: true, message: "Withdrawal rejected and balance refunded", withdrawal });
+  res.json({
+    success: true,
+    message: shouldRefund ? "Withdrawal rejected and balance refunded" : "Withdrawal rejected without refund (duplicate prevention)",
+    withdrawal
+  });
 });
 apiRouter.post("/admin/withdrawals/reference/update-destination", async (req, res) => {
   const { reference, destination } = req.body;
@@ -3958,7 +4102,7 @@ var isInitialized = false;
 var lastYieldProcessingTime = 0;
 var lastMongoSyncTime = 0;
 var YIELD_PROCESSING_COOLDOWN = 60 * 1e3;
-var MONGO_SYNC_COOLDOWN = 10 * 1e3;
+var MONGO_SYNC_COOLDOWN = 60 * 1e3;
 async function ensureServerlessInit() {
   const now = Date.now();
   if (!isInitialized) {

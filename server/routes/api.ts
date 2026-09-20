@@ -2339,15 +2339,23 @@ apiRouter.post('/admin/withdrawals/:id/delete', async (req: Request, res: Respon
   const target = db.withdrawals.find((w) => w.id === id || w.reference === id);
 
   const refOrId = target ? target.reference || target.id : id;
+  const cleanKey = id.replace('wd_', '').replace('WD-', '');
 
   // Remove from local in-memory lists
   db.withdrawals = db.withdrawals.filter(
-    (w) => w.id !== id && w.reference !== id && (target ? w.id !== target.id && w.reference !== target.reference : true)
+    (w) =>
+      w.id !== id &&
+      w.reference !== id &&
+      (target ? w.id !== target.id && w.reference !== target.reference : true) &&
+      !w.id.includes(cleanKey) &&
+      !(w.reference && w.reference.includes(cleanKey))
   );
   db.transactions = db.transactions.filter(
     (t) =>
       t.reference !== refOrId &&
-      !t.id.includes(id.replace('wd_', '')) &&
+      t.reference !== id &&
+      !t.id.includes(cleanKey) &&
+      !(t.description && t.description.includes(refOrId)) &&
       (target ? t.reference !== target.reference && !t.id.includes(target.id.replace('wd_', '')) : true)
   );
 
