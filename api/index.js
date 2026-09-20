@@ -654,30 +654,35 @@ var DBStore = class {
     });
     const mawuli = this.users.find((u) => u.id === "usr_1789654475484" || u.username === "Mawuli");
     if (mawuli) {
-      let keptMawuliDay1 = false;
-      let keptMawuliDay2 = false;
+      const seenMawuliDays = /* @__PURE__ */ new Set();
       this.transactions = this.transactions.filter((t) => {
         if (t.userId === mawuli.id && t.type === "mining_reward") {
-          if (t.description && t.description.includes("(Day 1/")) {
-            if (keptMawuliDay1) return false;
-            keptMawuliDay1 = true;
-            return true;
-          }
-          if (t.description && t.description.includes("(Day 2/")) {
-            if (keptMawuliDay2) return false;
-            keptMawuliDay2 = true;
+          const match = (t.description || "").match(/\(Day (\d+)\//);
+          if (match) {
+            const dayKey = `day_${match[1]}`;
+            if (seenMawuliDays.has(dayKey)) return false;
+            seenMawuliDays.add(dayKey);
             return true;
           }
         }
         return true;
       });
+      const mawuliYieldTxs = this.transactions.filter(
+        (t) => t.userId === mawuli.id && t.type === "mining_reward" && t.status === "completed"
+      );
+      const totalYieldAmount = Number(mawuliYieldTxs.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(2));
+      const yieldDaysCount = mawuliYieldTxs.length;
       const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === "active");
       if (mawuliContract) {
-        mawuliContract.accumulatedReward = 98;
-        mawuliContract.lastCalculatedAt = (/* @__PURE__ */ new Date("2026-09-19T14:37:00Z")).toISOString();
+        mawuliContract.accumulatedReward = totalYieldAmount;
+        if (yieldDaysCount > 0) {
+          const startMs = new Date(mawuliContract.startDate || mawuliContract.createdAt).getTime();
+          mawuliContract.lastCalculatedAt = new Date(startMs + yieldDaysCount * 24 * 60 * 60 * 1e3).toISOString();
+        }
       }
-      mawuli.totalRewards = 98;
-      mawuli.balance = 0;
+      mawuli.totalRewards = totalYieldAmount;
+      const baseDeductions = 98;
+      mawuli.balance = Number(Math.max(0, totalYieldAmount - baseDeductions).toFixed(2));
       mawuli.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     }
   }
@@ -936,18 +941,30 @@ var DBStore = class {
             $or: [{ reference: "WD-082027" }, { id: { $regex: "082027" } }, { description: { $regex: "082027" } }]
           })
         );
-        ops.push(
-          UserModel2.updateOne(
-            { id: "usr_1789654475484" },
-            { $set: { balance: 0, totalRewards: 98, updatedAt: (/* @__PURE__ */ new Date()).toISOString() } }
-          )
-        );
-        ops.push(
-          MiningContractModel2.updateOne(
-            { userId: "usr_1789654475484" },
-            { $set: { accumulatedReward: 98, updatedAt: (/* @__PURE__ */ new Date()).toISOString() } }
-          )
-        );
+        const mawuli = this.users.find((u) => u.id === "usr_1789654475484" || u.username === "Mawuli");
+        if (mawuli) {
+          ops.push(
+            UserModel2.updateOne(
+              { id: mawuli.id },
+              { $set: { balance: mawuli.balance, totalRewards: mawuli.totalRewards, updatedAt: (/* @__PURE__ */ new Date()).toISOString() } }
+            )
+          );
+          const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === "active");
+          if (mawuliContract) {
+            ops.push(
+              MiningContractModel2.updateOne(
+                { id: mawuliContract.id },
+                {
+                  $set: {
+                    accumulatedReward: mawuliContract.accumulatedReward,
+                    lastCalculatedAt: mawuliContract.lastCalculatedAt,
+                    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+                  }
+                }
+              )
+            );
+          }
+        }
         ops.push(
           TransactionModel2.deleteMany({
             userId: "usr_1789654475484",
@@ -3844,11 +3861,12 @@ apiRouter.post("/admin/withdrawals/:id/delete", async (req, res) => {
   const { id } = req.params;
   const target = db.withdrawals.find((w) => w.id === id || w.reference === id);
   const refOrId = target ? target.reference || target.id : id;
+  const cleanKey = id.replace("wd_", "").replace("WD-", "");
   db.withdrawals = db.withdrawals.filter(
-    (w) => w.id !== id && w.reference !== id && (target ? w.id !== target.id && w.reference !== target.reference : true)
+    (w) => w.id !== id && w.reference !== id && (target ? w.id !== target.id && w.reference !== target.reference : true) && !w.id.includes(cleanKey) && !(w.reference && w.reference.includes(cleanKey))
   );
   db.transactions = db.transactions.filter(
-    (t) => t.reference !== refOrId && !t.id.includes(id.replace("wd_", "")) && (target ? t.reference !== target.reference && !t.id.includes(target.id.replace("wd_", "")) : true)
+    (t) => t.reference !== refOrId && t.reference !== id && !t.id.includes(cleanKey) && !(t.description && t.description.includes(refOrId)) && (target ? t.reference !== target.reference && !t.id.includes(target.id.replace("wd_", "")) : true)
   );
   await db.saveData();
   const { deleteWithdrawalFromMongo: deleteWithdrawalFromMongo2 } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));

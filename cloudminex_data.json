@@ -63,9 +63,9 @@
       "phone": "0500394563",
       "password": "password123",
       "currency": "GHS",
-      "balance": 0,
+      "balance": 49,
       "totalDeposits": 650,
-      "totalRewards": 98,
+      "totalRewards": 147,
       "activeContracts": 1,
       "paymentMethod": "Mobile Payments",
       "paymentAddress": "Telecel 0500394563",
@@ -74,7 +74,7 @@
       "vipLevel": 1,
       "claimedMilestones": [],
       "createdAt": "2026-09-17T14:14:35.484Z",
-      "updatedAt": "2026-09-20T14:46:52.752Z"
+      "updatedAt": "2026-09-20T21:24:47.716Z"
     }
   ],
   "miningPlans": [
@@ -256,13 +256,13 @@
       "rewardRate": 0.07,
       "estimatedDailyReward": 49,
       "estimatedTotalReward": 1470,
-      "accumulatedReward": 98,
+      "accumulatedReward": 147,
       "status": "active",
       "startDate": "2026-09-17T14:37:00.000Z",
       "endDate": "2026-10-17T14:37:00.000Z",
-      "lastCalculatedAt": "2026-09-19T14:37:00.000Z",
+      "lastCalculatedAt": "2026-09-20T14:37:00.000Z",
       "createdAt": "2026-09-17T14:37:46.147Z",
-      "updatedAt": "2026-09-20T14:46:52.751Z"
+      "updatedAt": "2026-09-20T21:24:15.450Z"
     }
   ],
   "deposits": [

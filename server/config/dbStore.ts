@@ -455,37 +455,46 @@ class DBStore {
     // 5. Reconcile user Mawuli (usr_1789654475484 / Mawuli)
     const mawuli = this.users.find((u) => u.id === 'usr_1789654475484' || u.username === 'Mawuli');
     if (mawuli) {
-      // Keep only one Day 1 yield and one Day 2 yield for Mawuli
-      let keptMawuliDay1 = false;
-      let keptMawuliDay2 = false;
+      // Ensure exactly one yield transaction per cycle day for Mawuli
+      const seenMawuliDays = new Set<string>();
       this.transactions = this.transactions.filter((t) => {
         if (t.userId === mawuli.id && t.type === 'mining_reward') {
-          if (t.description && t.description.includes('(Day 1/')) {
-            if (keptMawuliDay1) return false;
-            keptMawuliDay1 = true;
-            return true;
-          }
-          if (t.description && t.description.includes('(Day 2/')) {
-            if (keptMawuliDay2) return false;
-            keptMawuliDay2 = true;
+          const match = (t.description || '').match(/\(Day (\d+)\//);
+          if (match) {
+            const dayKey = `day_${match[1]}`;
+            if (seenMawuliDays.has(dayKey)) return false;
+            seenMawuliDays.add(dayKey);
             return true;
           }
         }
         return true;
       });
 
-      // Accumulated reward for PRO MINER (2 days * 49.00 = 98.00 GHS)
+      // Calculate confirmed mining yields for Mawuli
+      const mawuliYieldTxs = this.transactions.filter(
+        (t) => t.userId === mawuli.id && t.type === 'mining_reward' && t.status === 'completed'
+      );
+      const totalYieldAmount = Number(mawuliYieldTxs.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(2));
+      const yieldDaysCount = mawuliYieldTxs.length;
+
       const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === 'active');
       if (mawuliContract) {
-        mawuliContract.accumulatedReward = 98.00;
-        mawuliContract.lastCalculatedAt = new Date('2026-09-19T14:37:00Z').toISOString();
+        mawuliContract.accumulatedReward = totalYieldAmount;
+        if (yieldDaysCount > 0) {
+          const startMs = new Date(mawuliContract.startDate || mawuliContract.createdAt).getTime();
+          mawuliContract.lastCalculatedAt = new Date(startMs + yieldDaysCount * 24 * 60 * 60 * 1000).toISOString();
+        }
       }
 
-      // Total lifetime rewards earned is exactly 98.00 GHS
-      mawuli.totalRewards = 98.00;
+      mawuli.totalRewards = totalYieldAmount;
 
-      // Recompute correct balance: 650 (deposit) + 50 (welcome bonus) - 700 (PRO MINER purchase) + 98 (2 days yield) - 98 (WD-589789 paid out) = 0.00 GHS
-      mawuli.balance = 0.00;
+      // Net spendable balance:
+      // Deposits (650) + Welcome Bonus (50) - Contract Purchase (700) - Paid Out Withdrawals (98) + Yields
+      // 650 + 50 - 700 - 98 = -98. Net balance = totalYieldAmount - 98.
+      // Day 1 (49) + Day 2 (49) - 98 = 0.00.
+      // Day 3 (49) -> balance = 49.00 GHS!
+      const baseDeductions = 98.00; // Paid withdrawal WD-589789
+      mawuli.balance = Number(Math.max(0, totalYieldAmount - baseDeductions).toFixed(2));
       mawuli.updatedAt = new Date().toISOString();
     }
   }
@@ -803,18 +812,30 @@ class DBStore {
             $or: [{ reference: 'WD-082027' }, { id: { $regex: '082027' } }, { description: { $regex: '082027' } }],
           })
         );
-        ops.push(
-          UserModel.updateOne(
-            { id: 'usr_1789654475484' },
-            { $set: { balance: 0.00, totalRewards: 98.00, updatedAt: new Date().toISOString() } }
-          )
-        );
-        ops.push(
-          MiningContractModel.updateOne(
-            { userId: 'usr_1789654475484' },
-            { $set: { accumulatedReward: 98.00, updatedAt: new Date().toISOString() } }
-          )
-        );
+        const mawuli = this.users.find((u) => u.id === 'usr_1789654475484' || u.username === 'Mawuli');
+        if (mawuli) {
+          ops.push(
+            UserModel.updateOne(
+              { id: mawuli.id },
+              { $set: { balance: mawuli.balance, totalRewards: mawuli.totalRewards, updatedAt: new Date().toISOString() } }
+            )
+          );
+          const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === 'active');
+          if (mawuliContract) {
+            ops.push(
+              MiningContractModel.updateOne(
+                { id: mawuliContract.id },
+                {
+                  $set: {
+                    accumulatedReward: mawuliContract.accumulatedReward,
+                    lastCalculatedAt: mawuliContract.lastCalculatedAt,
+                    updatedAt: new Date().toISOString(),
+                  },
+                }
+              )
+            );
+          }
+        }
         // Remove duplicate yield transaction records from Mongo
         ops.push(
           TransactionModel.deleteMany({
