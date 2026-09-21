@@ -378,6 +378,13 @@ export async function getUnifiedMongoContracts(): Promise<MiningContractCloudMin
 
   const result: MiningContractCloudMineX[] = [];
   for (const c of contractMap.values()) {
+    if (
+      c.id === 'cntr_1789815937003_2' ||
+      ((c.userId === 'usr_1789815937003' || c.userId === 'Lawson mattey') &&
+        (c.planName === 'WELCOME CLOUD RIG' || c.amount === 50))
+    ) {
+      continue;
+    }
     const duration = Number(c.duration || c.durationDays || 7);
     const amount = Number(c.amount || 100);
     const rewardRate = Number(c.rewardRate || 0.05);
@@ -541,11 +548,18 @@ export async function deleteContractFromMongo(contractId: string): Promise<boole
 /**
  * Prunes excess contracts for a user in MongoDB so only the allowed number of contracts remain.
  */
-export async function pruneUserContractsInMongo(userId: string, keepContractIds: string[]): Promise<boolean> {
+export async function pruneUserContractsInMongo(
+  userId: string,
+  keepContractIds: string[],
+  username?: string
+): Promise<boolean> {
   if (!isMongoConnected()) return false;
   try {
+    const userMatch = username
+      ? { $or: [{ userId }, { userId: username }] }
+      : { userId };
     const filter = {
-      userId,
+      ...userMatch,
       id: { $nin: keepContractIds },
     };
     await MiningContractModel.deleteMany(filter);
@@ -564,4 +578,81 @@ export async function pruneUserContractsInMongo(userId: string, keepContractIds:
     return false;
   }
 }
+
+/**
+ * Ensures there is only one transaction record in MongoDB for a withdrawal reference,
+ * updating the primary one with latest status/destination and deleting any duplicate pending records.
+ */
+export async function deduplicateWithdrawalTransactionsInMongo(
+  reference: string,
+  primaryTx: TransactionCloudMineX
+): Promise<boolean> {
+  if (!isMongoConnected() || !reference) return false;
+  try {
+    const filter = {
+      $or: [
+        { reference: reference },
+        { id: primaryTx.id },
+      ],
+    };
+
+    // Find all matching transactions in primary collection
+    const docs = await (TransactionModel as any).find(filter).lean();
+
+    if (docs.length > 1) {
+      const keepDoc = docs.find((d: any) => d.id === primaryTx.id) || docs[0];
+      const keepDocId = (keepDoc as any)._id;
+
+      await TransactionModel.deleteMany({
+        reference: reference,
+        _id: { $ne: keepDocId },
+      });
+
+      if (mongoose.connection.db) {
+        const colls = await mongoose.connection.db.listCollections().toArray();
+        const collNames = colls.map((c) => c.name);
+        for (const t of ['transactions', 'transactioncloudminexes', 'TransactionCloudMineX']) {
+          if (collNames.includes(t)) {
+            await mongoose.connection.db.collection(t).deleteMany({
+              reference: reference,
+              _id: { $ne: keepDocId },
+            });
+          }
+        }
+      }
+    }
+
+    const updateDoc = {
+      $set: {
+        id: primaryTx.id,
+        userId: primaryTx.userId,
+        type: 'withdrawal',
+        amount: Number(primaryTx.amount),
+        currency: primaryTx.currency || 'GHS',
+        reference: primaryTx.reference,
+        description: primaryTx.description,
+        status: primaryTx.status,
+        destination: primaryTx.destination,
+      },
+    };
+
+    await TransactionModel.updateMany({ reference: reference }, updateDoc);
+
+    if (mongoose.connection.db) {
+      const colls = await mongoose.connection.db.listCollections().toArray();
+      const collNames = colls.map((c) => c.name);
+      for (const t of ['transactions', 'transactioncloudminexes', 'TransactionCloudMineX']) {
+        if (collNames.includes(t)) {
+          await mongoose.connection.db.collection(t).updateMany({ reference: reference }, updateDoc);
+        }
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[MongoDB] Error deduplicating withdrawal transaction:', err);
+    return false;
+  }
+}
+
 

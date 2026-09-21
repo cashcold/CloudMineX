@@ -74,7 +74,7 @@
       "vipLevel": 1,
       "claimedMilestones": [],
       "createdAt": "2026-09-17T14:14:35.484Z",
-      "updatedAt": "2026-09-21T15:30:44.185Z"
+      "updatedAt": "2026-09-21T15:54:55.000Z"
     },
     {
       "id": "usr_1789474390086",
@@ -95,7 +95,7 @@
       "totalRewards": 386,
       "activeContracts": 2,
       "createdAt": "2026-09-15T12:13:10.086Z",
-      "updatedAt": "2026-09-21T15:30:44.185Z"
+      "updatedAt": "2026-09-21T15:54:55.000Z"
     },
     {
       "id": "usr_1789815937003",
@@ -105,18 +105,18 @@
       "password": "law@son7",
       "paymentMethod": "Mobile Payments",
       "paymentAddress": "0591714749",
-      "balance": 15,
+      "balance": 0,
       "totalDeposits": 100,
       "currency": "GHS",
       "referralCode": "Lawson mattey",
       "referredBy": null,
       "vipLevel": 1,
-      "vipTier": "Bronze VIP",
+      "vipTier": "Bronze Affiliate",
       "claimedMilestones": [],
-      "totalRewards": 30,
-      "activeContracts": 2,
+      "totalRewards": 0,
+      "activeContracts": 1,
       "createdAt": "2026-09-19T11:05:37.003Z",
-      "updatedAt": "2026-09-21T15:02:40.608Z"
+      "updatedAt": "2026-09-21T15:07:47.221Z"
     },
     {
       "id": "usr_joenor",
@@ -341,7 +341,7 @@
       "maturityDate": "2026-09-23T09:46:00.000Z",
       "lastCalculatedAt": "2026-09-21T09:46:00.000Z",
       "createdAt": "2026-09-16T09:46:00.000Z",
-      "updatedAt": "2026-09-21T15:30:44.185Z"
+      "updatedAt": "2026-09-21T15:54:54.999Z"
     },
     {
       "id": "cntr_1789718163181",
@@ -357,7 +357,7 @@
       "maturityDate": "2026-11-17T08:00:00.000Z",
       "lastCalculatedAt": "2026-09-21T08:00:00.000Z",
       "createdAt": "2026-09-18T08:00:00.000Z",
-      "updatedAt": "2026-09-21T15:30:44.185Z"
+      "updatedAt": "2026-09-21T15:54:54.999Z"
     },
     {
       "id": "cntr_1789653080484_1_5673",
@@ -388,24 +388,6 @@
       "estimatedDailyReward": 5,
       "estimatedTotalReward": 35,
       "accumulatedReward": 10,
-      "startDate": "2026-09-19T11:05:37.003Z",
-      "endDate": "2026-09-26T11:05:37.003Z",
-      "lastCalculatedAt": "2026-09-21T11:05:37.003Z",
-      "status": "active",
-      "createdAt": "2026-09-19T11:05:37.003Z",
-      "updatedAt": "2026-09-21T15:02:40.608Z"
-    },
-    {
-      "id": "cntr_1789815937003_2",
-      "userId": "usr_1789815937003",
-      "planId": "plan_starter",
-      "planName": "WELCOME CLOUD RIG",
-      "amount": 50,
-      "duration": 7,
-      "rewardRate": 0.05,
-      "estimatedDailyReward": 2.5,
-      "estimatedTotalReward": 17.5,
-      "accumulatedReward": 5,
       "startDate": "2026-09-19T11:05:37.003Z",
       "endDate": "2026-09-26T11:05:37.003Z",
       "lastCalculatedAt": "2026-09-21T11:05:37.003Z",
@@ -590,48 +572,15 @@
   ],
   "transactions": [
     {
-      "id": "tx_yield_cntr_1789815937003_2_d2",
-      "userId": "usr_1789815937003",
+      "id": "tx_yield_contract_1789655866147_d4",
+      "userId": "usr_1789654475484",
       "type": "mining_reward",
-      "amount": 2.5,
+      "amount": 49,
       "currency": "GHS",
-      "reference": "YIELD-7003_2-D2",
-      "description": "24h Daily Yield - WELCOME CLOUD RIG (Day 2/7)",
+      "reference": "YIELD-866147-D4",
+      "description": "24h Daily Yield - PRO MINER (Day 4/30)",
       "status": "completed",
-      "createdAt": "2026-09-21T11:05:37.003Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789815937003_2_d1",
-      "userId": "usr_1789815937003",
-      "type": "mining_reward",
-      "amount": 2.5,
-      "currency": "GHS",
-      "reference": "YIELD-7003_2-D1",
-      "description": "24h Daily Yield - WELCOME CLOUD RIG (Day 1/7)",
-      "status": "completed",
-      "createdAt": "2026-09-20T11:05:37.003Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789815937003_1_d2",
-      "userId": "usr_1789815937003",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-7003_1-D2",
-      "description": "24h Daily Yield - STARTER MINER (Day 2/7)",
-      "status": "completed",
-      "createdAt": "2026-09-21T11:05:37.003Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789815937003_1_d1",
-      "userId": "usr_1789815937003",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-7003_1-D1",
-      "description": "24h Daily Yield - STARTER MINER (Day 1/7)",
-      "status": "completed",
-      "createdAt": "2026-09-20T11:05:37.003Z"
+      "createdAt": "2026-09-21T14:37:00.000Z"
     },
     {
       "id": "tx_yield_cntr_1789653080484_1_5673_d4",
@@ -645,37 +594,15 @@
       "createdAt": "2026-09-21T13:51:20.484Z"
     },
     {
-      "id": "tx_yield_cntr_1789653080484_1_5673_d3",
-      "userId": "usr_1789653080484",
+      "id": "tx_yield_cntr_1789815937003_1_d2",
+      "userId": "usr_1789815937003",
       "type": "mining_reward",
       "amount": 5,
       "currency": "GHS",
-      "reference": "YIELD-1_5673-D3",
-      "description": "24h Daily Yield - STARTER MINER (Day 3/7)",
-      "status": "completed",
-      "createdAt": "2026-09-20T13:51:20.484Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789653080484_1_5673_d2",
-      "userId": "usr_1789653080484",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-1_5673-D2",
+      "reference": "YIELD-7003_1-D2",
       "description": "24h Daily Yield - STARTER MINER (Day 2/7)",
       "status": "completed",
-      "createdAt": "2026-09-19T13:51:20.484Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789653080484_1_5673_d1",
-      "userId": "usr_1789653080484",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-1_5673-D1",
-      "description": "24h Daily Yield - STARTER MINER (Day 1/7)",
-      "status": "completed",
-      "createdAt": "2026-09-18T13:51:20.484Z"
+      "createdAt": "2026-09-21T11:05:37.003Z"
     },
     {
       "id": "tx_yield_cntr_1789551456636_d5",
@@ -689,38 +616,194 @@
       "createdAt": "2026-09-21T09:46:00.000Z"
     },
     {
-      "id": "tx_yield_contract_1789655866147_d4",
+      "id": "tx_wd_1789718386599",
+      "userId": "usr_1789474390086",
+      "type": "withdrawal",
+      "amount": 245,
+      "currency": "GHS",
+      "reference": "WD-386599",
+      "description": "Withdrawal to 0557188356",
+      "destination": "0557188356",
+      "status": "completed",
+      "createdAt": "2026-09-21T08:13:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789718163181_d3",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 120,
+      "currency": "GHS",
+      "reference": "YIELD-36_835-D3",
+      "description": "24h Daily Yield - ADVANCED MINER (Day 3/60)",
+      "status": "completed",
+      "createdAt": "2026-09-21T08:00:00.000Z"
+    },
+    {
+      "id": "tx_yield_contract_1789655866147_d3",
       "userId": "usr_1789654475484",
       "type": "mining_reward",
       "amount": 49,
       "currency": "GHS",
-      "reference": "YIELD-866147-D4",
-      "description": "24h Daily Yield - PRO MINER (Day 4/30)",
+      "reference": "YIELD-866147-D3",
+      "description": "24h Daily Yield - PRO MINER (Day 3/30)",
       "status": "completed",
-      "createdAt": "2026-09-21T14:37:00.000Z"
+      "createdAt": "2026-09-20T14:37:00.000Z"
     },
     {
-      "id": "tx_bonus_usr_1789474390086",
-      "userId": "usr_1789474390086",
-      "type": "welcome_bonus",
-      "amount": 50,
+      "id": "tx_yield_cntr_1789653080484_1_5673_d3",
+      "userId": "usr_1789653080484",
+      "type": "mining_reward",
+      "amount": 5,
       "currency": "GHS",
-      "reference": "WELCOME-BONUS-0086",
-      "description": "Welcome Registration Bonus",
+      "reference": "YIELD-1_5673-D3",
+      "description": "24h Daily Yield - STARTER MINER (Day 3/7)",
       "status": "completed",
-      "createdAt": "2026-09-15T12:13:10.086Z"
+      "createdAt": "2026-09-20T13:51:20.484Z"
     },
     {
-      "id": "tx_wd_1789551095549",
+      "id": "tx_yield_cntr_1789815937003_1_d1",
+      "userId": "usr_1789815937003",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-7003_1-D1",
+      "description": "24h Daily Yield - STARTER MINER (Day 1/7)",
+      "status": "completed",
+      "createdAt": "2026-09-20T11:05:37.003Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789551456636_d4",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-54_499-D4",
+      "description": "24h Daily Yield - STARTER MINER (Day 4/7)",
+      "status": "completed",
+      "createdAt": "2026-09-20T09:46:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789718163181_d2",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 120,
+      "currency": "GHS",
+      "reference": "YIELD-36_835-D2",
+      "description": "24h Daily Yield - ADVANCED MINER (Day 2/60)",
+      "status": "completed",
+      "createdAt": "2026-09-20T08:00:00.000Z"
+    },
+    {
+      "id": "tx_wd_589789",
+      "userId": "usr_1789654475484",
+      "type": "withdrawal",
+      "amount": 98,
+      "currency": "GHS",
+      "reference": "WD-589789",
+      "description": "Withdrawal to Telecel 0500394563",
+      "destination": "Telecel 0500394563",
+      "status": "completed",
+      "createdAt": "2026-09-19T15:59:00.000Z"
+    },
+    {
+      "id": "tx_yield_contract_1789655866147_d2",
+      "userId": "usr_1789654475484",
+      "type": "mining_reward",
+      "amount": 49,
+      "currency": "GHS",
+      "reference": "YIELD-_147-8233",
+      "description": "24h Daily Yield - PRO MINER (Day 2/30)",
+      "status": "completed",
+      "createdAt": "2026-09-19T14:37:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789653080484_1_5673_d2",
+      "userId": "usr_1789653080484",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-1_5673-D2",
+      "description": "24h Daily Yield - STARTER MINER (Day 2/7)",
+      "status": "completed",
+      "createdAt": "2026-09-19T13:51:20.484Z"
+    },
+    {
+      "id": "tx_wd_1789650470419",
       "userId": "usr_1789474390086",
       "type": "withdrawal",
-      "amount": 50,
+      "amount": 130,
       "currency": "GHS",
-      "reference": "WD-095549",
+      "reference": "WD-470419",
       "description": "Withdrawal to 0557188356",
       "destination": "0557188356",
       "status": "completed",
-      "createdAt": "2026-09-16T12:00:00.000Z"
+      "createdAt": "2026-09-19T10:00:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789551456636_d3",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-_499-4702",
+      "description": "24h Daily Yield - STARTER MINER (Day 3/7)",
+      "status": "completed",
+      "createdAt": "2026-09-19T09:46:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789718163181_d1",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 120,
+      "currency": "GHS",
+      "reference": "YIELD-36_835-D1",
+      "description": "24h Daily Yield - ADVANCED MINER (Day 1/60)",
+      "status": "completed",
+      "createdAt": "2026-09-19T08:00:00.000Z"
+    },
+    {
+      "id": "tx_yield_contract_1789655866147_d1",
+      "userId": "usr_1789654475484",
+      "type": "mining_reward",
+      "amount": 49,
+      "currency": "GHS",
+      "reference": "YIELD-_147-1457",
+      "description": "24h Daily Yield - PRO MINER (Day 1/30)",
+      "status": "completed",
+      "createdAt": "2026-09-18T14:37:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789653080484_1_5673_d1",
+      "userId": "usr_1789653080484",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-1_5673-D1",
+      "description": "24h Daily Yield - STARTER MINER (Day 1/7)",
+      "status": "completed",
+      "createdAt": "2026-09-18T13:51:20.484Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789551456636_d2",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-_499-3684",
+      "description": "24h Daily Yield - STARTER MINER (Day 2/7)",
+      "status": "completed",
+      "createdAt": "2026-09-18T09:46:00.000Z"
+    },
+    {
+      "id": "tx_dep_1789669033572",
+      "userId": "usr_demo_101",
+      "type": "deposit",
+      "amount": 150,
+      "currency": "GHS",
+      "reference": "DEP-031367",
+      "description": "Deposit via MTN MoMo",
+      "status": "completed",
+      "createdAt": "2026-09-17T18:17:13.572Z"
     },
     {
       "id": "tx_wd_1789551318841",
@@ -746,150 +829,27 @@
       "createdAt": "2026-09-17T09:46:00.000Z"
     },
     {
-      "id": "tx_yield_cntr_1789551456636_d2",
-      "userId": "usr_1789474390086",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-_499-3684",
-      "description": "24h Daily Yield - STARTER MINER (Day 2/7)",
-      "status": "completed",
-      "createdAt": "2026-09-18T09:46:00.000Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789718163181_d1",
-      "userId": "usr_1789474390086",
-      "type": "mining_reward",
-      "amount": 120,
-      "currency": "GHS",
-      "reference": "YIELD-36_835-D1",
-      "description": "24h Daily Yield - ADVANCED MINER (Day 1/60)",
-      "status": "completed",
-      "createdAt": "2026-09-19T08:00:00.000Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789551456636_d3",
-      "userId": "usr_1789474390086",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-_499-4702",
-      "description": "24h Daily Yield - STARTER MINER (Day 3/7)",
-      "status": "completed",
-      "createdAt": "2026-09-19T09:46:00.000Z"
-    },
-    {
-      "id": "tx_wd_1789650470419",
+      "id": "tx_wd_1789551095549",
       "userId": "usr_1789474390086",
       "type": "withdrawal",
-      "amount": 130,
+      "amount": 50,
       "currency": "GHS",
-      "reference": "WD-470419",
+      "reference": "WD-095549",
       "description": "Withdrawal to 0557188356",
       "destination": "0557188356",
       "status": "completed",
-      "createdAt": "2026-09-19T10:00:00.000Z"
+      "createdAt": "2026-09-16T12:00:00.000Z"
     },
     {
-      "id": "tx_yield_cntr_1789718163181_d2",
+      "id": "tx_bonus_usr_1789474390086",
       "userId": "usr_1789474390086",
-      "type": "mining_reward",
-      "amount": 120,
+      "type": "welcome_bonus",
+      "amount": 50,
       "currency": "GHS",
-      "reference": "YIELD-36_835-D2",
-      "description": "24h Daily Yield - ADVANCED MINER (Day 2/60)",
+      "reference": "WELCOME-BONUS-0086",
+      "description": "Welcome Registration Bonus",
       "status": "completed",
-      "createdAt": "2026-09-20T08:00:00.000Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789551456636_d4",
-      "userId": "usr_1789474390086",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-54_499-D4",
-      "description": "24h Daily Yield - STARTER MINER (Day 4/7)",
-      "status": "completed",
-      "createdAt": "2026-09-20T09:46:00.000Z"
-    },
-    {
-      "id": "tx_yield_cntr_1789718163181_d3",
-      "userId": "usr_1789474390086",
-      "type": "mining_reward",
-      "amount": 120,
-      "currency": "GHS",
-      "reference": "YIELD-36_835-D3",
-      "description": "24h Daily Yield - ADVANCED MINER (Day 3/60)",
-      "status": "completed",
-      "createdAt": "2026-09-21T08:00:00.000Z"
-    },
-    {
-      "id": "tx_wd_1789718386599",
-      "userId": "usr_1789474390086",
-      "type": "withdrawal",
-      "amount": 245,
-      "currency": "GHS",
-      "reference": "WD-386599",
-      "description": "Withdrawal to 0557188356",
-      "destination": "0557188356",
-      "status": "completed",
-      "createdAt": "2026-09-21T08:13:00.000Z"
-    },
-    {
-      "id": "tx_yield_contract_1789655866147_d3",
-      "userId": "usr_1789654475484",
-      "type": "mining_reward",
-      "amount": 49,
-      "currency": "GHS",
-      "reference": "YIELD-866147-D3",
-      "description": "24h Daily Yield - PRO MINER (Day 3/30)",
-      "status": "completed",
-      "createdAt": "2026-09-20T14:37:00.000Z"
-    },
-    {
-      "id": "tx_yield_contract_1789655866147_d1",
-      "userId": "usr_1789654475484",
-      "type": "mining_reward",
-      "amount": 49,
-      "currency": "GHS",
-      "reference": "YIELD-_147-1457",
-      "description": "24h Daily Yield - PRO MINER (Day 1/30)",
-      "status": "completed",
-      "createdAt": "2026-09-18T14:37:00.000Z"
-    },
-    {
-      "id": "tx_yield_contract_1789655866147_d2",
-      "userId": "usr_1789654475484",
-      "type": "mining_reward",
-      "amount": 49,
-      "currency": "GHS",
-      "reference": "YIELD-_147-8233",
-      "description": "24h Daily Yield - PRO MINER (Day 2/30)",
-      "status": "completed",
-      "createdAt": "2026-09-19T14:37:00.000Z"
-    },
-    {
-      "id": "tx_wd_589789",
-      "userId": "usr_1789654475484",
-      "type": "withdrawal",
-      "amount": 98,
-      "currency": "GHS",
-      "reference": "WD-589789",
-      "description": "Withdrawal to Telecel 0500394563",
-      "destination": "Telecel 0500394563",
-      "status": "completed",
-      "createdAt": "2026-09-19T15:59:00.000Z"
-    },
-    {
-      "id": "tx_dep_1789669033572",
-      "userId": "usr_demo_101",
-      "type": "deposit",
-      "amount": 150,
-      "currency": "GHS",
-      "reference": "DEP-031367",
-      "description": "Deposit via MTN MoMo",
-      "status": "completed",
-      "createdAt": "2026-09-17T18:17:13.572Z"
+      "createdAt": "2026-09-15T12:13:10.086Z"
     },
     {
       "id": "tx_dep_1788819348158",
@@ -914,149 +874,6 @@
       "createdAt": "2026-09-07T22:01:21.154Z"
     },
     {
-      "id": "tx_yield_1788818481154_830_13",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1154",
-      "description": "24h Daily Yield - BASIC MINER (Day 14/14)",
-      "status": "completed",
-      "createdAt": "2026-09-06T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481154_751_12",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1154",
-      "description": "24h Daily Yield - BASIC MINER (Day 13/14)",
-      "status": "completed",
-      "createdAt": "2026-09-05T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481154_725_11",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1154",
-      "description": "24h Daily Yield - BASIC MINER (Day 12/14)",
-      "status": "completed",
-      "createdAt": "2026-09-04T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_384_10",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1154",
-      "description": "24h Daily Yield - BASIC MINER (Day 11/14)",
-      "status": "completed",
-      "createdAt": "2026-09-03T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_814_9",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 10/14)",
-      "status": "completed",
-      "createdAt": "2026-09-02T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_890_8",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 9/14)",
-      "status": "completed",
-      "createdAt": "2026-09-01T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_969_7",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 8/14)",
-      "status": "completed",
-      "createdAt": "2026-08-31T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_841_6",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 7/14)",
-      "status": "completed",
-      "createdAt": "2026-08-30T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_327_5",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 6/14)",
-      "status": "completed",
-      "createdAt": "2026-08-29T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_546_4",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 5/14)",
-      "status": "completed",
-      "createdAt": "2026-08-28T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_345_3",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 4/14)",
-      "status": "completed",
-      "createdAt": "2026-08-27T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_670_2",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 3/14)",
-      "status": "completed",
-      "createdAt": "2026-08-26T15:04:03.996Z"
-    },
-    {
-      "id": "tx_yield_1788818481153_824_1",
-      "userId": "usr_1787511109395",
-      "type": "mining_reward",
-      "amount": 18,
-      "currency": "GHS",
-      "reference": "YIELD-_289-1153",
-      "description": "24h Daily Yield - BASIC MINER (Day 2/14)",
-      "status": "completed",
-      "createdAt": "2026-08-25T15:04:03.996Z"
-    },
-    {
       "id": "tx_mature_1788818481153_461",
       "userId": "usr_1787511109395",
       "type": "mining_reward",
@@ -1066,6 +883,17 @@
       "description": "Contract Matured: BASIC MINER (14 Days Full Cycle Completed)",
       "status": "completed",
       "createdAt": "2026-09-07T22:01:21.153Z"
+    },
+    {
+      "id": "tx_yield_1788818481154_830_13",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1154",
+      "description": "24h Daily Yield - BASIC MINER (Day 14/14)",
+      "status": "completed",
+      "createdAt": "2026-09-06T15:04:03.996Z"
     },
     {
       "id": "tx_yield_1788818481153_275_13",
@@ -1079,6 +907,17 @@
       "createdAt": "2026-09-06T14:51:09.939Z"
     },
     {
+      "id": "tx_yield_1788818481154_751_12",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1154",
+      "description": "24h Daily Yield - BASIC MINER (Day 13/14)",
+      "status": "completed",
+      "createdAt": "2026-09-05T15:04:03.996Z"
+    },
+    {
       "id": "tx_yield_1788818481153_608_12",
       "userId": "usr_1787511109395",
       "type": "mining_reward",
@@ -1088,6 +927,17 @@
       "description": "24h Daily Yield - BASIC MINER (Day 13/14)",
       "status": "completed",
       "createdAt": "2026-09-05T14:51:09.939Z"
+    },
+    {
+      "id": "tx_yield_1788818481154_725_11",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1154",
+      "description": "24h Daily Yield - BASIC MINER (Day 12/14)",
+      "status": "completed",
+      "createdAt": "2026-09-04T15:04:03.996Z"
     },
     {
       "id": "tx_yield_1788818481153_857_11",
@@ -1101,6 +951,17 @@
       "createdAt": "2026-09-04T14:51:09.939Z"
     },
     {
+      "id": "tx_yield_1788818481153_384_10",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1154",
+      "description": "24h Daily Yield - BASIC MINER (Day 11/14)",
+      "status": "completed",
+      "createdAt": "2026-09-03T15:04:03.996Z"
+    },
+    {
       "id": "tx_yield_1788818481153_107_10",
       "userId": "usr_1787511109395",
       "type": "mining_reward",
@@ -1110,6 +971,17 @@
       "description": "24h Daily Yield - BASIC MINER (Day 11/14)",
       "status": "completed",
       "createdAt": "2026-09-03T14:51:09.939Z"
+    },
+    {
+      "id": "tx_yield_1788818481153_814_9",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 10/14)",
+      "status": "completed",
+      "createdAt": "2026-09-02T15:04:03.996Z"
     },
     {
       "id": "tx_yield_1788818481153_410_9",
@@ -1123,6 +995,17 @@
       "createdAt": "2026-09-02T14:51:09.939Z"
     },
     {
+      "id": "tx_yield_1788818481153_890_8",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 9/14)",
+      "status": "completed",
+      "createdAt": "2026-09-01T15:04:03.996Z"
+    },
+    {
       "id": "tx_yield_1788818481153_404_8",
       "userId": "usr_1787511109395",
       "type": "mining_reward",
@@ -1132,6 +1015,17 @@
       "description": "24h Daily Yield - BASIC MINER (Day 9/14)",
       "status": "completed",
       "createdAt": "2026-09-01T14:51:09.939Z"
+    },
+    {
+      "id": "tx_yield_1788818481153_969_7",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 8/14)",
+      "status": "completed",
+      "createdAt": "2026-08-31T15:04:03.996Z"
     },
     {
       "id": "tx_yield_1788818481153_431_7",
@@ -1145,6 +1039,17 @@
       "createdAt": "2026-08-31T14:51:09.939Z"
     },
     {
+      "id": "tx_yield_1788818481153_841_6",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 7/14)",
+      "status": "completed",
+      "createdAt": "2026-08-30T15:04:03.996Z"
+    },
+    {
       "id": "tx_yield_1788818481153_513_6",
       "userId": "usr_1787511109395",
       "type": "mining_reward",
@@ -1154,6 +1059,17 @@
       "description": "24h Daily Yield - BASIC MINER (Day 7/14)",
       "status": "completed",
       "createdAt": "2026-08-30T14:51:09.939Z"
+    },
+    {
+      "id": "tx_yield_1788818481153_327_5",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 6/14)",
+      "status": "completed",
+      "createdAt": "2026-08-29T15:04:03.996Z"
     },
     {
       "id": "tx_yield_1788818481153_380_5",
@@ -1167,6 +1083,17 @@
       "createdAt": "2026-08-29T14:51:09.939Z"
     },
     {
+      "id": "tx_yield_1788818481153_546_4",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 5/14)",
+      "status": "completed",
+      "createdAt": "2026-08-28T15:04:03.996Z"
+    },
+    {
       "id": "tx_yield_1788818481153_349_4",
       "userId": "usr_1787511109395",
       "type": "mining_reward",
@@ -1176,6 +1103,17 @@
       "description": "24h Daily Yield - BASIC MINER (Day 5/14)",
       "status": "completed",
       "createdAt": "2026-08-28T14:51:09.939Z"
+    },
+    {
+      "id": "tx_yield_1788818481153_345_3",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 4/14)",
+      "status": "completed",
+      "createdAt": "2026-08-27T15:04:03.996Z"
     },
     {
       "id": "tx_yield_1788818481153_427_3",
@@ -1189,6 +1127,17 @@
       "createdAt": "2026-08-27T14:51:09.939Z"
     },
     {
+      "id": "tx_yield_1788818481153_670_2",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 3/14)",
+      "status": "completed",
+      "createdAt": "2026-08-26T15:04:03.996Z"
+    },
+    {
       "id": "tx_yield_1788818481153_257_2",
       "userId": "usr_1787511109395",
       "type": "mining_reward",
@@ -1198,6 +1147,17 @@
       "description": "24h Daily Yield - BASIC MINER (Day 3/14)",
       "status": "completed",
       "createdAt": "2026-08-26T14:51:09.939Z"
+    },
+    {
+      "id": "tx_yield_1788818481153_824_1",
+      "userId": "usr_1787511109395",
+      "type": "mining_reward",
+      "amount": 18,
+      "currency": "GHS",
+      "reference": "YIELD-_289-1153",
+      "description": "24h Daily Yield - BASIC MINER (Day 2/14)",
+      "status": "completed",
+      "createdAt": "2026-08-25T15:04:03.996Z"
     },
     {
       "id": "tx_yield_1788818481153_452_1",
@@ -1211,93 +1171,15 @@
       "createdAt": "2026-08-25T14:51:09.939Z"
     },
     {
-      "id": "tx_wd_1787604209057",
-      "userId": "usr_1787511109395",
-      "type": "withdrawal",
-      "amount": 126,
-      "currency": "GHS",
-      "reference": "WD-209057",
-      "description": "Withdrawal request to TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v",
-      "status": "pending",
-      "createdAt": "2026-08-24T20:43:29.057Z",
-      "destination": "TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v"
-    },
-    {
-      "id": "tx_welcome_1787486272264",
-      "userId": "usr_1787486272264",
-      "type": "deposit",
-      "amount": 50,
-      "currency": "GHS",
-      "reference": "WELCOME-BONUS-2264",
-      "description": "Welcome Bonus Credit",
-      "status": "completed",
-      "createdAt": "2026-08-23T11:57:52.264Z"
-    },
-    {
-      "id": "tx_seed_001",
-      "userId": "usr_demo_101",
-      "type": "deposit",
-      "amount": 1000,
-      "currency": "GHS",
-      "reference": "DEP-MOMO-9182",
-      "description": "Mobile Money Welcome Credit",
-      "status": "completed",
-      "createdAt": "2026-07-29T15:56:11.689Z"
-    },
-    {
-      "id": "tx_seed_002",
-      "userId": "usr_demo_101",
-      "type": "mining_purchase",
-      "amount": 100,
-      "currency": "GHS",
-      "reference": "PURCHASE-STARTER-01",
-      "description": "Starter Miner Contract Activation",
-      "status": "completed",
-      "createdAt": "2026-08-01T15:56:11.688Z"
-    },
-    {
-      "id": "tx_seed_003",
+      "id": "tx_mature_1787584830582_994",
       "userId": "usr_demo_101",
       "type": "mining_reward",
-      "amount": 5,
+      "amount": 0,
       "currency": "GHS",
-      "reference": "REWARD-DAY-1",
-      "description": "Simulated Mining Reward - Starter Miner",
+      "reference": "MATURE-_001",
+      "description": "Contract Matured: STARTER MINER (7 Days Full Cycle Completed)",
       "status": "completed",
-      "createdAt": "2026-08-02T15:56:11.689Z"
-    },
-    {
-      "id": "tx_welcome_1787511109395",
-      "userId": "usr_1787511109395",
-      "type": "deposit",
-      "amount": 50,
-      "currency": "GHS",
-      "reference": "WELCOME-BONUS-9395",
-      "description": "Welcome Bonus Credit",
-      "status": "completed",
-      "createdAt": "2026-08-23T18:51:49.395Z"
-    },
-    {
-      "id": "tx_dep_1787581473768",
-      "userId": "usr_1787511109395",
-      "type": "deposit",
-      "amount": 640,
-      "currency": "GHS",
-      "reference": "MOMO-1787581211612-2667",
-      "description": "Confirmed Deposit via Vodafone Cash",
-      "status": "completed",
-      "createdAt": "2026-08-24T14:24:33.768Z"
-    },
-    {
-      "id": "tx_p_1787583069939",
-      "userId": "usr_1787511109395",
-      "type": "mining_purchase",
-      "amount": 300,
-      "currency": "GHS",
-      "reference": "PURCHASE-BASIC-MINER-9939",
-      "description": "Purchase BASIC MINER Contract (14 Days)",
-      "status": "completed",
-      "createdAt": "2026-08-24T14:51:09.939Z"
+      "createdAt": "2026-08-24T15:20:30.582Z"
     },
     {
       "id": "tx_p_1787583843996",
@@ -1311,48 +1193,26 @@
       "createdAt": "2026-08-24T15:04:03.996Z"
     },
     {
-      "id": "tx_yield_1787584830582_732_3",
-      "userId": "usr_demo_101",
+      "id": "tx_yield_1787604137077_851_1",
+      "userId": "usr_1787511109395",
       "type": "mining_reward",
-      "amount": 5,
+      "amount": 18,
       "currency": "GHS",
-      "reference": "YIELD-_001-0582",
-      "description": "24h Daily Yield - STARTER MINER (Day 5/7)",
+      "reference": "YIELD-_289-7077",
+      "description": "24h Daily Yield - BASIC MINER (Day 1/14)",
       "status": "completed",
-      "createdAt": "2026-08-06T15:56:11.688Z"
+      "createdAt": "2026-08-24T15:04:03.996Z"
     },
     {
-      "id": "tx_yield_1787584830582_52_4",
-      "userId": "usr_demo_101",
-      "type": "mining_reward",
-      "amount": 5,
+      "id": "tx_p_1787583069939",
+      "userId": "usr_1787511109395",
+      "type": "mining_purchase",
+      "amount": 300,
       "currency": "GHS",
-      "reference": "YIELD-_001-0582",
-      "description": "24h Daily Yield - STARTER MINER (Day 6/7)",
+      "reference": "PURCHASE-BASIC-MINER-9939",
+      "description": "Purchase BASIC MINER Contract (14 Days)",
       "status": "completed",
-      "createdAt": "2026-08-07T15:56:11.688Z"
-    },
-    {
-      "id": "tx_yield_1787584830582_767_1",
-      "userId": "usr_demo_101",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-_001-0582",
-      "description": "24h Daily Yield - STARTER MINER (Day 3/7)",
-      "status": "completed",
-      "createdAt": "2026-08-04T15:56:11.688Z"
-    },
-    {
-      "id": "tx_yield_1787584830582_366_2",
-      "userId": "usr_demo_101",
-      "type": "mining_reward",
-      "amount": 5,
-      "currency": "GHS",
-      "reference": "YIELD-_001-0582",
-      "description": "24h Daily Yield - STARTER MINER (Day 4/7)",
-      "status": "completed",
-      "createdAt": "2026-08-05T15:56:11.688Z"
+      "createdAt": "2026-08-24T14:51:09.939Z"
     },
     {
       "id": "tx_yield_1787584830582_660_1",
@@ -1366,6 +1226,39 @@
       "createdAt": "2026-08-24T14:51:09.939Z"
     },
     {
+      "id": "tx_dep_1787581473768",
+      "userId": "usr_1787511109395",
+      "type": "deposit",
+      "amount": 640,
+      "currency": "GHS",
+      "reference": "MOMO-1787581211612-2667",
+      "description": "Confirmed Deposit via Vodafone Cash",
+      "status": "completed",
+      "createdAt": "2026-08-24T14:24:33.768Z"
+    },
+    {
+      "id": "tx_welcome_1787511109395",
+      "userId": "usr_1787511109395",
+      "type": "deposit",
+      "amount": 50,
+      "currency": "GHS",
+      "reference": "WELCOME-BONUS-9395",
+      "description": "Welcome Bonus Credit",
+      "status": "completed",
+      "createdAt": "2026-08-23T18:51:49.395Z"
+    },
+    {
+      "id": "tx_welcome_1787486272264",
+      "userId": "usr_1787486272264",
+      "type": "deposit",
+      "amount": 50,
+      "currency": "GHS",
+      "reference": "WELCOME-BONUS-2264",
+      "description": "Welcome Bonus Credit",
+      "status": "completed",
+      "createdAt": "2026-08-23T11:57:52.264Z"
+    },
+    {
       "id": "tx_yield_1787584830582_95_5",
       "userId": "usr_demo_101",
       "type": "mining_reward",
@@ -1377,26 +1270,93 @@
       "createdAt": "2026-08-08T15:56:11.688Z"
     },
     {
-      "id": "tx_mature_1787584830582_994",
+      "id": "tx_yield_1787584830582_52_4",
       "userId": "usr_demo_101",
       "type": "mining_reward",
-      "amount": 0,
+      "amount": 5,
       "currency": "GHS",
-      "reference": "MATURE-_001",
-      "description": "Contract Matured: STARTER MINER (7 Days Full Cycle Completed)",
+      "reference": "YIELD-_001-0582",
+      "description": "24h Daily Yield - STARTER MINER (Day 6/7)",
       "status": "completed",
-      "createdAt": "2026-08-24T15:20:30.582Z"
+      "createdAt": "2026-08-07T15:56:11.688Z"
     },
     {
-      "id": "tx_yield_1787604137077_851_1",
-      "userId": "usr_1787511109395",
+      "id": "tx_yield_1787584830582_732_3",
+      "userId": "usr_demo_101",
       "type": "mining_reward",
-      "amount": 18,
+      "amount": 5,
       "currency": "GHS",
-      "reference": "YIELD-_289-7077",
-      "description": "24h Daily Yield - BASIC MINER (Day 1/14)",
+      "reference": "YIELD-_001-0582",
+      "description": "24h Daily Yield - STARTER MINER (Day 5/7)",
       "status": "completed",
-      "createdAt": "2026-08-24T15:04:03.996Z"
+      "createdAt": "2026-08-06T15:56:11.688Z"
+    },
+    {
+      "id": "tx_yield_1787584830582_366_2",
+      "userId": "usr_demo_101",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-_001-0582",
+      "description": "24h Daily Yield - STARTER MINER (Day 4/7)",
+      "status": "completed",
+      "createdAt": "2026-08-05T15:56:11.688Z"
+    },
+    {
+      "id": "tx_yield_1787584830582_767_1",
+      "userId": "usr_demo_101",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-_001-0582",
+      "description": "24h Daily Yield - STARTER MINER (Day 3/7)",
+      "status": "completed",
+      "createdAt": "2026-08-04T15:56:11.688Z"
+    },
+    {
+      "id": "tx_seed_003",
+      "userId": "usr_demo_101",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "REWARD-DAY-1",
+      "description": "Simulated Mining Reward - Starter Miner",
+      "status": "completed",
+      "createdAt": "2026-08-02T15:56:11.689Z"
+    },
+    {
+      "id": "tx_seed_002",
+      "userId": "usr_demo_101",
+      "type": "mining_purchase",
+      "amount": 100,
+      "currency": "GHS",
+      "reference": "PURCHASE-STARTER-01",
+      "description": "Starter Miner Contract Activation",
+      "status": "completed",
+      "createdAt": "2026-08-01T15:56:11.688Z"
+    },
+    {
+      "id": "tx_seed_001",
+      "userId": "usr_demo_101",
+      "type": "deposit",
+      "amount": 1000,
+      "currency": "GHS",
+      "reference": "DEP-MOMO-9182",
+      "description": "Mobile Money Welcome Credit",
+      "status": "completed",
+      "createdAt": "2026-07-29T15:56:11.689Z"
+    },
+    {
+      "id": "tx_wd_1787604209057",
+      "userId": "usr_1787511109395",
+      "type": "withdrawal",
+      "amount": 126,
+      "currency": "GHS",
+      "reference": "WD-209057",
+      "description": "Withdrawal request to TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v",
+      "status": "pending",
+      "createdAt": "2026-08-24T20:43:29.057Z",
+      "destination": "TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v"
     }
   ],
   "referrals": [

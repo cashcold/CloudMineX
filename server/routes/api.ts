@@ -1377,8 +1377,10 @@ const handleWithdrawal = async (req: Request, res: Response) => {
   db.withdrawals.unshift(withdrawal);
 
   // Record Transaction
+  const txId = `tx_wd_${Date.now()}`;
+  const nowIso = new Date().toISOString();
   db.transactions.unshift({
-    id: `tx_wd_${Date.now()}`,
+    id: txId,
     userId: user.id,
     type: 'withdrawal',
     amount: numAmount,
@@ -1386,7 +1388,8 @@ const handleWithdrawal = async (req: Request, res: Response) => {
     reference: ref,
     description: `Withdrawal request to ${destination || provider}`,
     status: 'pending',
-    createdAt: new Date().toISOString(),
+    destination: destination || provider,
+    createdAt: nowIso,
   });
 
   // Directly update MongoDB immediately to ensure durability under serverless environments
@@ -1407,7 +1410,7 @@ const handleWithdrawal = async (req: Request, res: Response) => {
           { reference: ref },
           {
             $set: {
-              id: `tx_wd_${Date.now()}`,
+              id: txId,
               userId: user.id,
               type: 'withdrawal',
               amount: numAmount,
@@ -1415,7 +1418,8 @@ const handleWithdrawal = async (req: Request, res: Response) => {
               reference: ref,
               description: `Withdrawal request to ${destination || provider}`,
               status: 'pending',
-              createdAt: new Date().toISOString(),
+              destination: destination || provider,
+              createdAt: nowIso,
             },
           },
           { upsert: true }
@@ -1425,6 +1429,7 @@ const handleWithdrawal = async (req: Request, res: Response) => {
   } catch (mErr) {
     console.warn('[Withdrawal] Immediate Mongo update notice:', mErr);
   }
+
 
   await db.saveData();
 
@@ -1478,26 +1483,46 @@ apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
 
   const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'active');
   const completedContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'completed');
-  const userTxs = db.transactions
+  const rawTxs = db.transactions
     .filter((t) => t.userId === userId)
     .map((t) => {
       if (t.type === 'withdrawal') {
         const matchedWd = db.withdrawals.find(
           (w) => (t.reference && w.reference === t.reference) || (t.id && t.id.includes(w.id.replace('wd_', '')))
         );
-        if (matchedWd && matchedWd.destination) {
+        if (matchedWd) {
           const isDone = matchedWd.status === 'approved' || matchedWd.status === 'completed';
+          const dest = matchedWd.destination || t.destination || 'Mobile Wallet';
           return {
             ...t,
-            destination: matchedWd.destination,
-            description: `${isDone ? 'Withdrawal' : 'Withdrawal request'} to ${matchedWd.destination}`,
+            destination: dest,
+            description: `${isDone ? 'Withdrawal' : 'Withdrawal request'} to ${dest}`,
             status: isDone ? 'completed' : (matchedWd.status === 'rejected' ? 'failed' : t.status),
           };
         }
       }
       return t;
-    })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    });
+
+  // Sort completed before pending, newest first
+  rawTxs.sort((a, b) => {
+    if (a.status === 'completed' && b.status !== 'completed') return -1;
+    if (b.status === 'completed' && a.status !== 'completed') return 1;
+    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+  });
+
+  // Deduplicate transactions by reference so ledger never displays duplicate records
+  const seenTxRefs = new Set<string>();
+  const userTxs: any[] = [];
+  for (const t of rawTxs) {
+    if (t.reference) {
+      if (seenTxRefs.has(t.reference)) continue;
+      seenTxRefs.add(t.reference);
+    }
+    userTxs.push(t);
+  }
+  userTxs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
 
   const todayEstReward = activeContracts.reduce((sum, c) => sum + c.estimatedDailyReward, 0);
 
@@ -2228,47 +2253,71 @@ apiRouter.post('/admin/withdrawals/:id/approve', async (req: Request, res: Respo
   withdrawal.status = 'approved';
   withdrawal.updatedAt = new Date().toISOString();
 
-  // Find corresponding transaction
-  const tx = db.transactions.find(
+  // Find corresponding transactions and deduplicate
+  const matchingTxs = db.transactions.filter(
     (t) =>
       (t.reference && t.reference === withdrawal.reference) ||
       (t.type === 'withdrawal' && t.id.includes(withdrawal.id.replace('wd_', '')))
   );
-  if (tx) {
-    tx.status = 'completed';
-    if (withdrawal.destination) {
-      tx.description = `Withdrawal to ${withdrawal.destination}`;
-      tx.destination = withdrawal.destination;
+  let primaryTx: TransactionCloudMineX | undefined;
+  if (matchingTxs.length > 0) {
+    primaryTx = matchingTxs[0];
+    primaryTx.status = 'completed';
+    const dest = withdrawal.destination || primaryTx.destination || 'Mobile Wallet';
+    primaryTx.description = `Withdrawal to ${dest}`;
+    primaryTx.destination = dest;
+
+    // Purge any duplicate transactions for the same reference
+    if (matchingTxs.length > 1) {
+      const removeIds = new Set(matchingTxs.slice(1).map((t) => t.id));
+      db.transactions = db.transactions.filter((t) => !removeIds.has(t.id));
     }
   }
 
   await db.saveData();
 
   try {
-    const { isMongoConnected, WithdrawalModel, TransactionModel, UserModel } = await import('../config/dbMongo');
+    const {
+      isMongoConnected,
+      WithdrawalModel,
+      TransactionModel,
+      UserModel,
+      deduplicateWithdrawalTransactionsInMongo,
+    } = await import('../config/dbMongo');
     if (isMongoConnected()) {
-      await Promise.all([
+      const mongoOps: Promise<any>[] = [
         WithdrawalModel.updateOne(
           { $or: [{ id: withdrawal.id }, { reference: withdrawal.reference }] },
           { $set: { status: 'approved', destination: withdrawal.destination, updatedAt: withdrawal.updatedAt } }
         ),
-        tx
-          ? TransactionModel.updateOne(
-              { $or: [{ id: tx.id }, { reference: withdrawal.reference }] },
-              { $set: { status: 'completed', description: tx.description, destination: tx.destination } }
-            )
-          : Promise.resolve(),
-        wasRejected && user
-          ? UserModel.updateOne(
-              { id: user.id },
-              { $set: { balance: user.balance, updatedAt: user.updatedAt } }
-            )
-          : Promise.resolve(),
-      ]);
+      ];
+
+      if (primaryTx && withdrawal.reference) {
+        mongoOps.push(deduplicateWithdrawalTransactionsInMongo(withdrawal.reference, primaryTx));
+      } else if (primaryTx) {
+        mongoOps.push(
+          TransactionModel.updateMany(
+            { $or: [{ id: primaryTx.id }, { reference: withdrawal.reference }] },
+            { $set: { status: 'completed', description: primaryTx.description, destination: primaryTx.destination } }
+          )
+        );
+      }
+
+      if (wasRejected && user) {
+        mongoOps.push(
+          UserModel.updateOne(
+            { id: user.id },
+            { $set: { balance: user.balance, updatedAt: user.updatedAt } }
+          )
+        );
+      }
+
+      await Promise.all(mongoOps);
     }
   } catch (mErr) {
     console.warn('[Admin Approve] Mongo sync notice:', mErr);
   }
+
 
   res.json({ success: true, message: 'Withdrawal approved successfully', withdrawal, user });
 });
@@ -2291,46 +2340,72 @@ apiRouter.post('/admin/withdrawals/:id/reject', async (req: Request, res: Respon
   withdrawal.status = 'rejected';
   withdrawal.updatedAt = new Date().toISOString();
 
-  // Find corresponding transaction
-  const tx = db.transactions.find(
+  // Find corresponding transactions and deduplicate
+  const matchingTxs = db.transactions.filter(
     (t) =>
       (t.reference && t.reference === withdrawal.reference) ||
       (t.type === 'withdrawal' && t.id.includes(withdrawal.id.replace('wd_', '')))
   );
-  if (tx) {
-    tx.status = 'failed';
+  let primaryTx: TransactionCloudMineX | undefined;
+  if (matchingTxs.length > 0) {
+    primaryTx = matchingTxs[0];
+    primaryTx.status = 'failed';
     if (!shouldRefund) {
-      tx.description = `Withdrawal rejected without refund (duplicate/phantom prevention)`;
+      primaryTx.description = `Withdrawal rejected without refund (duplicate/phantom prevention)`;
+    } else {
+      primaryTx.description = `Withdrawal rejected to ${withdrawal.destination || primaryTx.destination || 'Mobile Wallet'}`;
+    }
+
+    if (matchingTxs.length > 1) {
+      const removeIds = new Set(matchingTxs.slice(1).map((t) => t.id));
+      db.transactions = db.transactions.filter((t) => !removeIds.has(t.id));
     }
   }
 
   await db.saveData();
 
   try {
-    const { isMongoConnected, WithdrawalModel, TransactionModel, UserModel } = await import('../config/dbMongo');
+    const {
+      isMongoConnected,
+      WithdrawalModel,
+      TransactionModel,
+      UserModel,
+      deduplicateWithdrawalTransactionsInMongo,
+    } = await import('../config/dbMongo');
     if (isMongoConnected()) {
-      await Promise.all([
+      const mongoOps: Promise<any>[] = [
         WithdrawalModel.updateOne(
           { $or: [{ id: withdrawal.id }, { reference: withdrawal.reference }] },
           { $set: { status: 'rejected', updatedAt: withdrawal.updatedAt } }
         ),
-        tx
-          ? TransactionModel.updateOne(
-              { $or: [{ id: tx.id }, { reference: withdrawal.reference }] },
-              { $set: { status: 'failed', description: tx.description } }
-            )
-          : Promise.resolve(),
-        shouldRefund && user
-          ? UserModel.updateOne(
-              { id: user.id },
-              { $set: { balance: user.balance, updatedAt: user.updatedAt } }
-            )
-          : Promise.resolve(),
-      ]);
+      ];
+
+      if (primaryTx && withdrawal.reference) {
+        mongoOps.push(deduplicateWithdrawalTransactionsInMongo(withdrawal.reference, primaryTx));
+      } else if (primaryTx) {
+        mongoOps.push(
+          TransactionModel.updateMany(
+            { $or: [{ id: primaryTx.id }, { reference: withdrawal.reference }] },
+            { $set: { status: 'failed', description: primaryTx.description } }
+          )
+        );
+      }
+
+      if (shouldRefund && user) {
+        mongoOps.push(
+          UserModel.updateOne(
+            { id: user.id },
+            { $set: { balance: user.balance, updatedAt: user.updatedAt } }
+          )
+        );
+      }
+
+      await Promise.all(mongoOps);
     }
   } catch (mErr) {
     console.warn('[Admin Reject] Mongo sync notice:', mErr);
   }
+
 
   res.json({
     success: true,
