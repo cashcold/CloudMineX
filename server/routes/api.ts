@@ -20,7 +20,20 @@ import {
   getTelegramBotToken,
   getTelegramAdminChatId,
 } from '../services/telegramService';
-import { UserModel, isMongoConnected } from '../config/dbMongo';
+import {
+  UserModel,
+  MiningPlanModel,
+  MiningContractModel,
+  DepositModel,
+  WithdrawalModel,
+  TransactionModel,
+  ReferralModel,
+  AppSettingsModel,
+  isMongoConnected,
+  ensureMongoConnected,
+  getUnifiedMongoWithdrawals,
+  getUnifiedMongoContracts,
+} from '../config/dbMongo';
 
 export const apiRouter = Router();
 
@@ -730,13 +743,23 @@ apiRouter.get('/users/demo', (req: Request, res: Response) => {
 });
 
 apiRouter.get('/users/:id', async (req: Request, res: Response) => {
+  await ensureMongoConnected();
   if (isMongoConnected()) {
-    try {
-      await db.syncFromMongo();
-    } catch (e) {}
+    const rawId = req.params.id;
+    const user = await UserModel.findOne({
+      $or: [
+        { id: rawId },
+        { username: rawId },
+        { username: new RegExp(`^${rawId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        { email: rawId.toLowerCase() },
+      ],
+    } as any).lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    return res.json({ success: true, user });
   }
-  processMiningYields(req.params.id);
-  const user = db.users.find((u) => u.id === req.params.id);
+  const user = db.users.find((u) => u.id === req.params.id || u.username === req.params.id || (u.email && u.email.toLowerCase() === req.params.id.toLowerCase()));
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
@@ -771,11 +794,25 @@ apiRouter.post('/sync/refresh', async (req: Request, res: Response) => {
 });
 
 // ================= MINING PLANS =================
-apiRouter.get('/mining-plans', (req: Request, res: Response) => {
+apiRouter.get('/mining-plans', async (req: Request, res: Response) => {
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const plans = await MiningPlanModel.find({ active: { $ne: false } } as any).lean();
+    if (plans && plans.length > 0) {
+      return res.json({ success: true, plans });
+    }
+  }
   res.json({ success: true, plans: db.miningPlans.filter((p) => p.active) });
 });
 
-apiRouter.get('/mining-plans/:id', (req: Request, res: Response) => {
+apiRouter.get('/mining-plans/:id', async (req: Request, res: Response) => {
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const plan = await MiningPlanModel.findOne({ id: req.params.id } as any).lean();
+    if (plan) {
+      return res.json({ success: true, plan });
+    }
+  }
   const plan = db.miningPlans.find((p) => p.id === req.params.id);
   if (!plan) {
     return res.status(404).json({ success: false, message: 'Mining plan not found' });
@@ -786,6 +823,91 @@ apiRouter.get('/mining-plans/:id', (req: Request, res: Response) => {
 // ================= MINING CONTRACTS =================
 apiRouter.post('/mining/start', async (req: Request, res: Response) => {
   const { userId, planId } = req.body;
+  await ensureMongoConnected();
+
+  if (isMongoConnected()) {
+    const userDoc: any = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      ],
+    } as any).lean();
+
+    if (!userDoc) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    let planDoc: any = await MiningPlanModel.findOne({ id: planId } as any).lean();
+    if (!planDoc) {
+      planDoc = db.miningPlans.find((p) => p.id === planId);
+    }
+    if (!planDoc || planDoc.active === false) {
+      return res.status(400).json({ success: false, message: 'Mining plan not available or inactive' });
+    }
+
+    const currentBalance = userDoc.balance !== undefined ? userDoc.balance : 0;
+    if (currentBalance < planDoc.price) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient balance. Required GHS ${planDoc.price.toFixed(2)}, available GHS ${currentBalance.toFixed(2)}. Please recharge first.`,
+      });
+    }
+
+    const now = new Date();
+    const endDate = new Date(now.getTime() + planDoc.duration * 86400000).toISOString();
+
+    const contract: MiningContractCloudMineX = {
+      id: `cntr_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      userId: userDoc.id,
+      planId: planDoc.id,
+      planName: planDoc.name,
+      amount: planDoc.price,
+      duration: planDoc.duration,
+      rewardRate: planDoc.rewardRate,
+      estimatedDailyReward: planDoc.estimatedDailyReward,
+      estimatedTotalReward: planDoc.estimatedTotalReward,
+      accumulatedReward: 0,
+      startDate: now.toISOString(),
+      endDate,
+      lastCalculatedAt: now.toISOString(),
+      status: 'active',
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+
+    const tx: TransactionCloudMineX = {
+      id: `tx_p_${Date.now()}`,
+      userId: userDoc.id,
+      type: 'mining_purchase',
+      amount: planDoc.price,
+      currency: 'GHS',
+      reference: `PURCHASE-${planDoc.name.replace(/\s+/g, '-').toUpperCase()}-${Date.now().toString().slice(-4)}`,
+      description: `Purchase ${planDoc.name} Contract (${planDoc.duration} Days)`,
+      status: 'completed',
+      createdAt: now.toISOString(),
+    };
+
+    await Promise.all([
+      MiningContractModel.updateOne({ id: contract.id } as any, { $set: contract } as any, { upsert: true }),
+      UserModel.updateOne(
+        { id: userDoc.id } as any,
+        {
+          $inc: { balance: -planDoc.price, activeContracts: 1 },
+          $set: { updatedAt: now.toISOString() },
+        } as any
+      ),
+      TransactionModel.updateOne({ id: tx.id } as any, { $set: tx } as any, { upsert: true }),
+    ]);
+
+    const updatedUser = await UserModel.findOne({ id: userDoc.id } as any).lean();
+    return res.json({
+      success: true,
+      message: `Successfully activated ${planDoc.name}! Mining contract started.`,
+      contract,
+      user: updatedUser,
+    });
+  }
 
   const user = db.users.find((u) => u.id === userId);
   if (!user) {
@@ -849,19 +971,6 @@ apiRouter.post('/mining/start', async (req: Request, res: Response) => {
 
   db.saveData();
 
-  if (isMongoConnected()) {
-    try {
-      const { MiningContractModel, UserModel, TransactionModel } = await import('../config/dbMongo');
-      Promise.all([
-        MiningContractModel.updateOne({ id: contract.id }, { $set: contract }, { upsert: true }),
-        UserModel.updateOne({ id: user.id }, { $set: { balance: user.balance, activeContracts: user.activeContracts, updatedAt: user.updatedAt } }),
-        TransactionModel.updateOne({ id: tx.id }, { $set: tx }, { upsert: true }),
-      ]).catch((mErr) => console.warn('[Mining Start] Async Mongo update notice:', mErr));
-    } catch (mErr) {
-      console.warn('[Mining Start] Direct Mongo update notice:', mErr);
-    }
-  }
-
   res.json({
     success: true,
     message: `Successfully activated ${plan.name}! Mining contract started.`,
@@ -872,21 +981,42 @@ apiRouter.post('/mining/start', async (req: Request, res: Response) => {
 
 apiRouter.get('/mining/user/:userId', async (req: Request, res: Response) => {
   const userId = req.params.userId;
+  await ensureMongoConnected();
+
   if (isMongoConnected()) {
-    try {
-      await db.syncFromMongo();
-    } catch (e) {}
+    const userDoc: any = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      ],
+    } as any).lean();
+    const actualUserId = userDoc ? userDoc.id : userId;
+    const username = userDoc?.username;
+    const contracts = await MiningContractModel.find({
+      $or: [
+        { userId: actualUserId },
+        ...(username ? [{ userId: username }] : []),
+      ],
+      status: 'active',
+    } as any).lean();
+    return res.json({ success: true, contracts });
   }
-  db.reconcileUserContracts(userId);
-  processMiningYields(userId);
-  
+
   const user = db.users.find((u) => u.id === userId || u.username === userId || (u.username && u.username.toLowerCase() === userId.toLowerCase()));
   const actualUserId = user ? user.id : userId;
   const contracts = db.miningContracts.filter((c) => (c.userId === actualUserId || (user && c.userId === user.username)) && c.status === 'active');
   res.json({ success: true, contracts });
 });
 
-apiRouter.get('/mining/:id', (req: Request, res: Response) => {
+apiRouter.get('/mining/:id', async (req: Request, res: Response) => {
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const contract = await MiningContractModel.findOne({ id: req.params.id } as any).lean();
+    if (contract) {
+      return res.json({ success: true, contract });
+    }
+  }
   const contract = db.miningContracts.find((c) => c.id === req.params.id);
   if (!contract) {
     return res.status(404).json({ success: false, message: 'Mining contract not found' });
@@ -1146,10 +1276,26 @@ apiRouter.post('/deposits/submit-review', async (req: Request, res: Response) =>
 });
 
 apiRouter.get('/deposits/:userId', async (req: Request, res: Response) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {}
-  const userDeposits = db.deposits.filter((d) => d.userId === req.params.userId);
+  const userId = req.params.userId;
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const userDoc: any = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      ],
+    } as any).lean();
+    const actualUserId = userDoc ? userDoc.id : userId;
+    const deposits = await DepositModel.find({
+      $or: [
+        { userId: actualUserId },
+        ...(userDoc?.username ? [{ userId: userDoc.username }] : []),
+      ],
+    } as any).sort({ createdAt: -1 }).lean();
+    return res.json({ success: true, deposits });
+  }
+  const userDeposits = db.deposits.filter((d) => d.userId === userId);
   res.json({ success: true, deposits: userDeposits });
 });
 
@@ -1461,21 +1607,82 @@ apiRouter.post('/withdrawals/create', handleWithdrawal);
 apiRouter.post('/withdraw', handleWithdrawal);
 apiRouter.post('/withdrawals', handleWithdrawal);
 
-apiRouter.get('/withdrawals/:userId', (req: Request, res: Response) => {
-  const userWds = db.withdrawals.filter((w) => w.userId === req.params.userId);
+apiRouter.get('/withdrawals/:userId', async (req: Request, res: Response) => {
+  const userId = req.params.userId;
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const userDoc: any = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      ],
+    } as any).lean();
+    const actualUserId = userDoc ? userDoc.id : userId;
+    const withdrawals = await WithdrawalModel.find({
+      $or: [
+        { userId: actualUserId },
+        ...(userDoc?.username ? [{ userId: userDoc.username }] : []),
+      ],
+    } as any).sort({ createdAt: -1 }).lean();
+    return res.json({ success: true, withdrawals });
+  }
+  const userWds = db.withdrawals.filter((w) => w.userId === userId);
   res.json({ success: true, withdrawals: userWds });
 });
 
 // ================= INCOME & TRANSACTIONS =================
 apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
   const userId = req.params.userId;
+  await ensureMongoConnected();
+
   if (isMongoConnected()) {
-    try {
-      await db.syncFromMongo();
-    } catch (e) {}
+    const user: any = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      ],
+    } as any).lean();
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    const actualUserId = user.id;
+    const username = user.username;
+    const userFilter = [
+      { userId: actualUserId },
+      ...(username ? [{ userId: username }] : []),
+    ];
+
+    const activeContracts: any[] = await MiningContractModel.find({
+      $or: userFilter,
+      status: 'active',
+    } as any).lean();
+
+    const completedContracts: any[] = await MiningContractModel.find({
+      $or: userFilter,
+      status: 'completed',
+    } as any).lean();
+
+    const rawTxs: any[] = await TransactionModel.find({
+      $or: userFilter,
+    } as any).sort({ createdAt: -1 }).lean();
+
+    const todayEstReward = activeContracts.reduce((sum, c) => sum + (c.estimatedDailyReward || 0), 0);
+
+    return res.json({
+      success: true,
+      balance: user.balance !== undefined ? user.balance : 0,
+      todayEstReward,
+      totalRewards: user.totalRewards !== undefined ? user.totalRewards : 0,
+      totalSimulatedRewards: user.totalRewards !== undefined ? user.totalRewards : 0,
+      activeContractsCount: activeContracts.length,
+      completedContractsCount: completedContracts.length,
+      activeContracts,
+      completedContracts,
+      transactions: rawTxs,
+    });
   }
-  db.reconcileUserContracts(userId);
-  processMiningYields(userId);
+
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
@@ -1522,7 +1729,6 @@ apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
     userTxs.push(t);
   }
   userTxs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
 
   const todayEstReward = activeContracts.reduce((sum, c) => sum + c.estimatedDailyReward, 0);
 
@@ -1792,12 +1998,39 @@ apiRouter.get('/settings', (req: Request, res: Response) => {
 
 // ================= ADMIN DASHBOARD API =================
 apiRouter.get('/admin/stats', async (req: Request, res: Response) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {
-    console.warn('[Admin Stats] syncFromMongo notice:', err);
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const [users, plans, deposits, withdrawals, contracts, settingsDoc] = await Promise.all([
+      UserModel.find().lean(),
+      MiningPlanModel.find().lean(),
+      DepositModel.find().sort({ createdAt: -1 }).lean(),
+      WithdrawalModel.find().sort({ createdAt: -1 }).lean(),
+      MiningContractModel.find({ status: 'active' } as any).lean(),
+      AppSettingsModel.findOne().lean(),
+    ]);
+
+    const totalUsers = users.length;
+    const activeContracts = contracts.length;
+    const totalDeposits = deposits.reduce((sum: number, d: any) => (d.status === 'confirmed' ? sum + (d.amount || 0) : sum), 0);
+    const totalWithdrawals = withdrawals.reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
+    const totalRewardsIssued = users.reduce((sum: number, u: any) => sum + (u.totalRewards || 0), 0);
+
+    return res.json({
+      success: true,
+      stats: {
+        totalUsers,
+        activeContracts,
+        totalDeposits,
+        totalWithdrawals,
+        totalRewardsIssued,
+      },
+      plans: plans && plans.length > 0 ? plans : db.miningPlans,
+      users,
+      deposits,
+      withdrawals,
+      settings: settingsDoc ? { ...db.settings, ...(settingsDoc as any) } : db.settings,
+    });
   }
-  db.cleanupSpecificRecords();
 
   const totalUsers = db.users.length;
   const activeContracts = db.miningContracts.filter((c) => c.status === 'active').length;

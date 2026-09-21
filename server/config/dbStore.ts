@@ -206,6 +206,20 @@ class DBStore {
   }
 
   private loadData() {
+    // If MongoDB URI is configured, MongoDB is the authoritative database.
+    // Do not load local memory or disk files.
+    if (process.env.MONGODB_URI || process.env.MONGO_URI) {
+      this.users = [];
+      this.miningContracts = [];
+      this.deposits = [];
+      this.withdrawals = [];
+      this.transactions = [];
+      this.referrals = [];
+      this.chatMessages = [];
+      this.ensureDefaultPlans();
+      return;
+    }
+
     try {
       let fileToRead = DATA_FILE;
       // In serverless environments (e.g. Vercel), check if latest data was written to /tmp
@@ -389,405 +403,9 @@ class DBStore {
   }
 
   public cleanupSpecificRecords() {
-    // 1. Permanently purge deleted withdrawals WD-057295, WD-082027 and any associated transactions
-    this.withdrawals = this.withdrawals.filter(
-      (w) =>
-        w.reference !== 'WD-057295' &&
-        w.id !== 'WD-057295' &&
-        !(typeof w.id === 'string' && w.id.includes('057295')) &&
-        w.reference !== 'WD-082027' &&
-        w.id !== 'WD-082027' &&
-        !(typeof w.id === 'string' && w.id.includes('082027'))
-    );
-    this.transactions = this.transactions.filter(
-      (t) =>
-        t.reference !== 'WD-057295' &&
-        !(typeof t.id === 'string' && t.id.includes('057295')) &&
-        !(t.description && t.description.includes('057295')) &&
-        t.reference !== 'WD-082027' &&
-        !(typeof t.id === 'string' && t.id.includes('082027')) &&
-        !(t.description && t.description.includes('082027'))
-    );
-
-    // 2. Ensure updated withdrawal WD-215628 amount is set to GHS 65.00
-    for (const w of this.withdrawals) {
-      if (w.reference === 'WD-215628' || w.id === 'WD-215628' || (typeof w.id === 'string' && w.id.includes('215628'))) {
-        w.amount = 65.00;
-        w.destination = '0597126658';
-        w.provider = 'MTN MoMo';
-      }
-    }
-    for (const t of this.transactions) {
-      if (t.reference === 'WD-215628' || (typeof t.id === 'string' && t.id.includes('215628'))) {
-        t.amount = 65.00;
-        t.destination = '0597126658';
-      }
-    }
-
-    // 3. Ensure user alienmonies (usr_1789653080484) has claimed bronze milestone preserved
-    const alienUser = this.users.find(
-      (u) => u.id === 'usr_1789653080484' || u.username === 'alienmonies'
-    );
-    if (alienUser) {
-      alienUser.claimedMilestones = alienUser.claimedMilestones || [];
-      if (!alienUser.claimedMilestones.includes('bronze')) {
-        alienUser.claimedMilestones.push('bronze');
-      }
-    }
-
-    // 4. Global deduplication of mining yield transactions across the ledger
-    const seenYieldKeys = new Set<string>();
-    this.transactions = this.transactions.filter((tx) => {
-      if (tx.type === 'mining_reward' && tx.description && tx.description.includes('(Day ')) {
-        const match = tx.description.match(/\(Day (\d+)\//);
-        if (match) {
-          const dayNum = match[1];
-          const planRef = (tx.reference || '').split('-').slice(0, 2).join('-');
-          const key = `${tx.userId}_${planRef}_day_${dayNum}`;
-          if (seenYieldKeys.has(key)) {
-            return false; // Duplicate yield! Remove it.
-          }
-          seenYieldKeys.add(key);
-        }
-      }
-      return true;
-    });
-
-    // 4b. Global deduplication of withdrawal transactions by reference
-    // Sort so completed/approved transactions come first, ensuring they take precedence over pending duplicates
-    this.transactions.sort((a, b) => {
-      if (a.status === 'completed' && b.status !== 'completed') return -1;
-      if (b.status === 'completed' && a.status !== 'completed') return 1;
-      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-    });
-    const seenWdRefs = new Set<string>();
-    this.transactions = this.transactions.filter((tx) => {
-      if (tx.type === 'withdrawal' && tx.reference) {
-        if (seenWdRefs.has(tx.reference)) {
-          return false; // Duplicate withdrawal transaction! Purge it.
-        }
-        seenWdRefs.add(tx.reference);
-      }
-      return true;
-    });
-
-    // Explicitly ensure WD-402762 is finalized as completed with single transaction
-    const wd402762 = this.withdrawals.find((w) => w.reference === 'WD-402762' || w.id === 'WD-402762');
-    if (wd402762) {
-      wd402762.status = 'approved';
-      if (!wd402762.destination) wd402762.destination = '0500394563';
-    }
-    for (const t of this.transactions) {
-      if (t.reference === 'WD-402762' || (typeof t.id === 'string' && t.id.includes('402762'))) {
-        t.status = 'completed';
-        t.destination = '0500394563';
-        t.description = 'Withdrawal to 0500394563';
-        t.amount = 50;
-      }
-    }
-
-
-    // 5. Reconcile user Mawuli (usr_1789654475484 / Mawuli)
-    const mawuli = this.users.find((u) => u.id === 'usr_1789654475484' || u.username === 'Mawuli');
-    if (mawuli) {
-      // Ensure exactly one yield transaction per cycle day for Mawuli
-      const seenMawuliDays = new Set<string>();
-      this.transactions = this.transactions.filter((t) => {
-        if (t.userId === mawuli.id && t.type === 'mining_reward') {
-          const match = (t.description || '').match(/\(Day (\d+)\//);
-          if (match) {
-            const dayKey = `day_${match[1]}`;
-            if (seenMawuliDays.has(dayKey)) return false;
-            seenMawuliDays.add(dayKey);
-            return true;
-          }
-        }
-        return true;
-      });
-
-      // Calculate confirmed mining yields for Mawuli
-      const mawuliYieldTxs = this.transactions.filter(
-        (t) => t.userId === mawuli.id && t.type === 'mining_reward' && t.status === 'completed'
-      );
-      const totalYieldAmount = Number(mawuliYieldTxs.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(2));
-      const yieldDaysCount = mawuliYieldTxs.length;
-
-      const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === 'active');
-      if (mawuliContract) {
-        mawuliContract.accumulatedReward = totalYieldAmount;
-        if (yieldDaysCount > 0) {
-          const startMs = new Date(mawuliContract.startDate || mawuliContract.createdAt).getTime();
-          mawuliContract.lastCalculatedAt = new Date(startMs + yieldDaysCount * 24 * 60 * 60 * 1000).toISOString();
-        }
-      }
-
-      mawuli.totalRewards = totalYieldAmount;
-
-      // Net spendable balance:
-      // Deposits (650) + Welcome Bonus (50) - Contract Purchase (700) - Paid Out Withdrawals (98) + Yields
-      // 650 + 50 - 700 - 98 = -98. Net balance = totalYieldAmount - 98.
-      // Day 1 (49) + Day 2 (49) - 98 = 0.00.
-      // Day 3 (49) -> balance = 49.00 GHS!
-      const baseDeductions = 98.00; // Paid withdrawal WD-589789
-      mawuli.balance = Number(Math.max(0, totalYieldAmount - baseDeductions).toFixed(2));
-      mawuli.updatedAt = new Date().toISOString();
-    }
-
-    // 6. Reconcile user Ketikpo Christian (usr_1789474390086 / cketikpo@gmail.com)
-    const ketikpo = this.users.find(
-      (u) =>
-        u.id === 'usr_1789474390086' ||
-        u.email === 'cketikpo@gmail.com' ||
-        (u.username && u.username.includes('Ketikpo'))
-    );
-    if (ketikpo) {
-      // Calculate confirmed mining yields for Ketikpo
-      const ketikpoYieldTxs = this.transactions.filter(
-        (t) =>
-          (t.userId === ketikpo.id || t.userId === 'usr_1789474390086') &&
-          t.type === 'mining_reward' &&
-          t.status === 'completed'
-      );
-      const totalYieldAmount = Number(ketikpoYieldTxs.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(2));
-      ketikpo.totalRewards = totalYieldAmount > 0 ? totalYieldAmount : 380.00;
-
-      // Ensure active contracts have accurate accumulated rewards
-      const starterContract = this.miningContracts.find(
-        (c) => (c.userId === ketikpo.id || c.userId === 'usr_1789474390086') && (c.planName.includes('STARTER') || c.amount === 100)
-      );
-      if (starterContract) {
-        const starterYieldTxs = ketikpoYieldTxs.filter(
-          (t) =>
-            (t.description && t.description.includes('STARTER')) ||
-            (starterContract.id && t.reference && t.reference.includes(starterContract.id.slice(-4)))
-        );
-        starterContract.accumulatedReward = starterYieldTxs.length > 0 ? Number((starterYieldTxs.length * 5).toFixed(2)) : 20.00;
-      }
-
-      const advancedContract = this.miningContracts.find(
-        (c) => (c.userId === ketikpo.id || c.userId === 'usr_1789474390086') && (c.planName.includes('ADVANCED') || c.amount === 1500)
-      );
-      if (advancedContract) {
-        const advancedYieldTxs = ketikpoYieldTxs.filter(
-          (t) =>
-            (t.description && t.description.includes('ADVANCED')) ||
-            (advancedContract.id && t.reference && t.reference.includes(advancedContract.id.slice(-4)))
-        );
-        advancedContract.accumulatedReward = advancedYieldTxs.length > 0 ? Number((advancedYieldTxs.length * 120).toFixed(2)) : 360.00;
-      }
-
-      // Reconcile withdrawal WD-386599 (amount: GHS 245.00)
-      const wd386599 = this.withdrawals.find(
-        (w) => w.reference === 'WD-386599' || w.id === 'WD-386599' || (typeof w.id === 'string' && w.id.includes('386599'))
-      );
-      if (wd386599) {
-        wd386599.status = 'approved';
-        wd386599.destination = wd386599.destination || ketikpo.paymentAddress || '0557188356';
-      }
-
-      // Ensure corresponding transaction for WD-386599 is marked completed
-      const wd386599Tx = this.transactions.find(
-        (t) =>
-          t.reference === 'WD-386599' ||
-          (t.type === 'withdrawal' && (t.reference === 'WD-386599' || (typeof t.id === 'string' && t.id.includes('386599'))))
-      );
-      if (wd386599Tx) {
-        wd386599Tx.status = 'completed';
-        wd386599Tx.description = `Withdrawal to ${ketikpo.paymentAddress || '0557188356'}`;
-        wd386599Tx.destination = ketikpo.paymentAddress || '0557188356';
-      }
-
-      // Check all non-rejected withdrawals
-      const ketikpoWds = this.withdrawals.filter(
-        (w) => (w.userId === ketikpo.id || w.userId === 'usr_1789474390086') && w.status !== 'rejected'
-      );
-      const totalWdAmount = Number(ketikpoWds.reduce((sum, w) => sum + (w.amount || 0), 0).toFixed(2));
-
-      // Ketikpo ledger arithmetic:
-      // Deposits: 100 (Starter) + 1500 (Advanced) = 1600 GHS
-      // Purchases: -100 (Starter) - 1500 (Advanced) = -1600 GHS
-      // Welcome bonus: +50 GHS
-      // Mining yields: +380 GHS (Starter: 20 GHS, Advanced: 360 GHS)
-      // Withdrawals: WD-095549 (50) + WD-318841 (5) + WD-470419 (130) + WD-386599 (245) = 430 GHS.
-      // Net spendable balance: (50 + totalYieldAmount) - effectiveWdTotal.
-      // When WD-386599 was submitted (total withdrawals = 430 GHS), net balance is 0.00 GHS!
-      const totalCredits = 50.00 + (totalYieldAmount > 0 ? totalYieldAmount : 380.00);
-      const effectiveWdTotal = Math.max(totalWdAmount, 430.00); // Guarantees WD-386599 deduction is accounted for
-      ketikpo.balance = Number(Math.max(0, totalCredits - effectiveWdTotal).toFixed(2));
-      ketikpo.updatedAt = new Date().toISOString();
-    }
-
-    // 7. Reconcile user Lawson mattey (usr_1789815937003 / lawsonmattey83@gmail.com)
-    // Authoritative state in MongoDB: activeContracts = 1, totalDeposits = 100 GHS, 1 Starter Miner contract
-    let lawson = this.users.find(
-      (u) =>
-        u.id === 'usr_1789815937003' ||
-        u.email === 'lawsonmattey83@gmail.com' ||
-        (u.username && u.username.toLowerCase().includes('lawson'))
-    );
-    if (!lawson) {
-      lawson = {
-        id: 'usr_1789815937003',
-        username: 'Lawson mattey',
-        email: 'lawsonmattey83@gmail.com',
-        phone: '0591714749',
-        password: 'law@son7',
-        paymentMethod: 'Mobile Payments',
-        paymentAddress: '0591714749',
-        balance: 0,
-        totalDeposits: 100,
-        currency: 'GHS',
-        referralCode: 'Lawson mattey',
-        referredBy: null,
-        vipLevel: 1,
-        vipTier: 'Bronze Affiliate',
-        claimedMilestones: [],
-        totalRewards: 0,
-        activeContracts: 1,
-        createdAt: '2026-09-19T11:05:37.003Z',
-        updatedAt: '2026-09-21T15:07:47.221Z',
-      };
-      this.users.push(lawson);
-    } else {
-      lawson.activeContracts = 1;
-      lawson.vipTier = lawson.vipTier || 'Bronze Affiliate';
-    }
-
-    // Permanently remove the deleted 2nd contract (WELCOME CLOUD RIG / cntr_1789815937003_2 / amount 50)
-    this.miningContracts = this.miningContracts.filter(
-      (c) =>
-        !(
-          (c.userId === 'usr_1789815937003' || (lawson && c.userId === lawson.id) || c.userId === 'Lawson mattey') &&
-          (c.id === 'cntr_1789815937003_2' || c.planName.includes('WELCOME') || c.amount === 50)
-        )
-    );
-
-    // Also remove yield transactions from the deleted contract
-    this.transactions = this.transactions.filter(
-      (t) => !(t.id && t.id.includes('cntr_1789815937003_2'))
-    );
-
-    // Ensure only 1 active Starter Miner contract for Lawson mattey
-    const lawsonContracts = this.miningContracts.filter(
-      (c) => (c.userId === 'usr_1789815937003' || (lawson && c.userId === lawson.id) || c.userId === 'Lawson mattey') && c.status === 'active'
-    );
-    if (lawsonContracts.length > 1) {
-      const keep = lawsonContracts[0];
-      const excess = lawsonContracts.slice(1);
-      const removeIds = new Set(excess.map((c) => c.id));
-      this.miningContracts = this.miningContracts.filter((c) => !removeIds.has(c.id));
-      import('./dbMongo').then(({ deleteContractFromMongo }) => {
-        for (const rem of excess) {
-          deleteContractFromMongo(rem.id).catch(() => {});
-        }
-      }).catch(() => {});
-    } else if (lawsonContracts.length === 0) {
-      this.miningContracts.push({
-        id: 'cntr_1789815937003_1',
-        userId: 'usr_1789815937003',
-        planId: 'plan_starter',
-        planName: 'STARTER MINER',
-        amount: 100,
-        duration: 7,
-        rewardRate: 0.05,
-        estimatedDailyReward: 5,
-        estimatedTotalReward: 35,
-        accumulatedReward: 0,
-        startDate: '2026-09-19T11:05:37.003Z',
-        endDate: '2026-09-26T11:05:37.003Z',
-        lastCalculatedAt: '2026-09-21T15:07:47.221Z',
-        status: 'active',
-        createdAt: '2026-09-19T11:05:37.003Z',
-        updatedAt: '2026-09-21T15:07:47.221Z',
-      });
-    }
-
-    // Trigger asynchronous deletion of cntr_1789815937003_2 across all Mongo collections
-    import('./dbMongo').then(({ deleteContractFromMongo, pruneUserContractsInMongo }) => {
-      deleteContractFromMongo('cntr_1789815937003_2').catch(() => {});
-      pruneUserContractsInMongo('usr_1789815937003', ['cntr_1789815937003_1'], 'Lawson mattey').catch(() => {});
-    }).catch(() => {});
-
-
-    // 8. Reconcile user Joenor (@Joenor) - deposit 100 GHC, exactly 1 active Starter Miner (100 GHS)
-    let joenor = this.users.find(
-      (u) =>
-        (u.username && u.username.toLowerCase().includes('joenor')) ||
-        (u.email && u.email.toLowerCase().includes('joenor')) ||
-        u.id === 'usr_joenor'
-    );
-    if (!joenor) {
-      joenor = {
-        id: 'usr_joenor',
-        username: 'Joenor',
-        email: 'joenor@cloudminex.io',
-        phone: '0550000000',
-        password: 'password123',
-        paymentMethod: 'Mobile Payments',
-        paymentAddress: '0550000000',
-        balance: 0,
-        totalDeposits: 100,
-        currency: 'GHS',
-        referralCode: 'Joenor',
-        referredBy: null,
-        vipLevel: 1,
-        vipTier: 'Bronze VIP',
-        claimedMilestones: [],
-        totalRewards: 0,
-        activeContracts: 1,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      this.users.push(joenor);
-    } else {
-      joenor.activeContracts = 1;
-      joenor.totalDeposits = 100;
-    }
-
-    // Enforce exactly 1 active contract for Joenor, removing any excess duplicate contracts
-    const joenorContracts = this.miningContracts.filter(
-      (c) => (c.userId === joenor.id || (joenor.username && c.userId === joenor.username)) && c.status === 'active'
-    );
-    if (joenorContracts.length > 1) {
-      // Keep only the first valid 100 GHS Starter Miner
-      const keep = joenorContracts[0];
-      keep.amount = 100;
-      keep.planName = 'STARTER MINER';
-      keep.duration = 7;
-      keep.estimatedDailyReward = 5;
-      keep.estimatedTotalReward = 35;
-      
-      const excess = joenorContracts.slice(1);
-      const removeIds = new Set(excess.map((c) => c.id));
-      this.miningContracts = this.miningContracts.filter((c) => !removeIds.has(c.id));
-
-      // Asynchronously delete the excess contracts from MongoDB across all collections
-      import('./dbMongo').then(({ deleteContractFromMongo }) => {
-        for (const rem of excess) {
-          deleteContractFromMongo(rem.id).catch(() => {});
-        }
-      }).catch(() => {});
-    } else if (joenorContracts.length === 0) {
-      // Create the 1 legitimate 100 GHS Starter Miner contract for Joenor
-      this.miningContracts.push({
-        id: `cntr_joenor_starter_1`,
-        userId: joenor.id,
-        planId: 'plan_starter',
-        planName: 'STARTER MINER',
-        amount: 100,
-        duration: 7,
-        rewardRate: 0.05,
-        estimatedDailyReward: 5,
-        estimatedTotalReward: 35,
-        accumulatedReward: 0,
-        startDate: joenor.createdAt || new Date().toISOString(),
-        endDate: new Date(Date.now() + 7 * 86400000).toISOString(),
-        lastCalculatedAt: new Date().toISOString(),
-        status: 'active',
-        createdAt: joenor.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-    }
+    // Database-first: Do not hardcode or mutate balances, contracts, or users.
+    // MongoDB is the sole authority for all data and balances.
+    return;
   }
 
   public reconcileWithdrawalTransactions(): boolean {
@@ -860,114 +478,31 @@ class DBStore {
       : this.users;
 
     for (const user of usersToCheck) {
-      if (!user.activeContracts || user.activeContracts <= 0) continue;
-
       const userActiveContracts = this.miningContracts.filter(
         (c) => c.userId === user.id && c.status === 'active'
       );
-
-      if (userActiveContracts.length < user.activeContracts) {
-        const needed = user.activeContracts - userActiveContracts.length;
-        console.log(
-          `[Reconcile] User ${user.username} (${user.id}) has ${user.activeContracts} activeContracts but only ${userActiveContracts.length} contract records. Restoring ${needed} active contracts...`
-        );
-
-        const baseDate = user.createdAt ? new Date(user.createdAt) : new Date(Date.now() - 2 * 86400000);
-
-        for (let i = 0; i < needed; i++) {
-          const contractIndex = userActiveContracts.length + i + 1;
-          let plan = this.miningPlans[0];
-          let planName = 'STARTER MINER';
-          let planPrice = 100;
-          let dailyYield = 5;
-          let duration = 7;
-
-          if (user.totalDeposits && user.totalDeposits >= 300 && user.activeContracts === 1) {
-            planName = 'BASIC MINER';
-            planPrice = 300;
-            dailyYield = 18;
-            duration = 14;
-          } else {
-            const foundPlan = this.miningPlans.find((p) => p.price <= (user.totalDeposits || 100));
-            if (foundPlan) {
-              planName = foundPlan.name;
-              planPrice = foundPlan.price;
-              dailyYield = foundPlan.estimatedDailyReward;
-              duration = foundPlan.duration;
-            }
-          }
-
-
-          const startMs = baseDate.getTime() + i * 3600000;
-          const startDate = new Date(startMs).toISOString();
-          const endDate = new Date(startMs + duration * 86400000).toISOString();
-
-          const daysPassed = Math.max(0, Math.min(duration, Math.floor((Date.now() - startMs) / 86400000)));
-          const accumulated = Number((daysPassed * dailyYield).toFixed(2));
-
-          const restoredContract: MiningContractCloudMineX = {
-            id: `cntr_${user.id.replace('usr_', '')}_${contractIndex}_${Date.now().toString().slice(-4)}`,
-            userId: user.id,
-            planId: plan?.id || 'plan_starter',
-            planName,
-            amount: planPrice,
-            duration,
-            rewardRate: 0.05,
-            estimatedDailyReward: dailyYield,
-            estimatedTotalReward: Number((dailyYield * duration).toFixed(2)),
-            accumulatedReward: accumulated,
-            startDate,
-            endDate,
-            lastCalculatedAt: new Date().toISOString(),
-            status: 'active',
-            createdAt: startDate,
-            updatedAt: new Date().toISOString(),
-          };
-
-          this.miningContracts.push(restoredContract);
-          modified = true;
-        }
-      } else if (userActiveContracts.length > user.activeContracts) {
-        // User has more active contracts than their official activeContracts count.
-        // Prune the excess duplicate contracts so they match user.activeContracts.
-        const excessCount = userActiveContracts.length - user.activeContracts;
-        console.log(
-          `[Reconcile] User ${user.username} (${user.id}) has ${userActiveContracts.length} active contracts but activeContracts is ${user.activeContracts}. Pruning ${excessCount} excess contract(s)...`
-        );
-
-        // Keep the first user.activeContracts contracts and remove the rest
-        const toKeep = new Set(userActiveContracts.slice(0, user.activeContracts).map((c) => c.id));
-        const toRemove = userActiveContracts.slice(user.activeContracts);
-
-        this.miningContracts = this.miningContracts.filter((c) => {
-          if (c.userId === user.id && c.status === 'active') {
-            return toKeep.has(c.id);
-          }
-          return true;
-        });
-
-        // Permanently delete the excess duplicate contracts from MongoDB across all collections
-        for (const rem of toRemove) {
-          try {
-            import('./dbMongo').then(({ deleteContractFromMongo }) => {
-              deleteContractFromMongo(rem.id).catch(() => {});
-            });
-          } catch (e) {}
-        }
+      if (user.activeContracts !== userActiveContracts.length) {
+        user.activeContracts = userActiveContracts.length;
         modified = true;
       }
     }
 
-    if (modified) {
-      try {
-        this.saveData();
-      } catch (e) {}
-    }
     return modified;
   }
 
   public async saveData() {
-    this.reconcileWithdrawalTransactions();
+    // When MongoDB is configured or connected, MongoDB is the authoritative database.
+    // Do NOT write local files and do NOT sync memory to MongoDB.
+    if (process.env.MONGODB_URI || process.env.MONGO_URI) {
+      return;
+    }
+    try {
+      const { isMongoConnected } = await import('./dbMongo');
+      if (isMongoConnected()) {
+        return;
+      }
+    } catch (e) {}
+
     const data = {
       users: this.users,
       miningPlans: this.miningPlans,
@@ -985,134 +520,15 @@ class DBStore {
       const targetFile = process.env.VERCEL ? TMP_DATA_FILE : DATA_FILE;
       fs.writeFileSync(targetFile, jsonString, 'utf-8');
     } catch (err) {
-      // If primary file write fails (e.g. read-only filesystem in serverless), fallback to /tmp
-      try {
-        fs.writeFileSync(TMP_DATA_FILE, jsonString, 'utf-8');
-      } catch (tmpErr) {
-        console.warn('[DBStore] Read-only serverless filesystem warning. Using in-memory & MongoDB persistence.');
-      }
-    }
-
-    // Always sync to MongoDB and await completion to ensure serverless state durability
-    try {
-      await this.syncToMongo();
-    } catch (err) {
-      console.warn('[DBStore] Background MongoDB sync notice:', err);
+      // If primary file write fails, ignore
     }
   }
 
   public async syncToMongo() {
-    try {
-      const {
-        isMongoConnected,
-        UserModel,
-        MiningPlanModel,
-        MiningContractModel,
-        DepositModel,
-        WithdrawalModel,
-        TransactionModel,
-        ReferralModel,
-        ChatMessageModel,
-        AppSettingsModel,
-      } = await import('./dbMongo');
-
-      if (!isMongoConnected()) return;
-
-      const ops: Promise<any>[] = [];
-
-      // Upsert users first to strictly guarantee user balances and profiles are persisted
-      if (this.users.length > 0) {
-        for (const u of this.users) {
-          try {
-            await UserModel.updateOne({ id: u.id }, { $set: u }, { upsert: true });
-          } catch (uErr) {
-            console.warn(`[DBStore] User sync error for ${u.id}:`, uErr);
-          }
-        }
-      }
-
-      // Upsert plans
-      if (this.miningPlans.length > 0) {
-        ops.push(...this.miningPlans.map((p) => MiningPlanModel.updateOne({ id: p.id }, { $set: p }, { upsert: true })));
-      }
-
-      // Upsert contracts
-      if (this.miningContracts.length > 0) {
-        for (const c of this.miningContracts) {
-          try {
-            await MiningContractModel.updateOne({ id: c.id }, { $set: c }, { upsert: true });
-          } catch (cErr) {
-            console.warn(`[DBStore] Contract sync error for ${c.id}:`, cErr);
-          }
-        }
-
-        // Clean up any pruned contracts for Lawson & Joenor in Mongo across all collections
-        const { pruneUserContractsInMongo, deleteContractFromMongo } = await import('./dbMongo');
-        deleteContractFromMongo('cntr_1789815937003_2').catch(() => {});
-
-        const lawson = this.users.find(
-          (u) =>
-            u.id === 'usr_1789815937003' ||
-            u.email === 'lawsonmattey83@gmail.com' ||
-            (u.username && u.username.toLowerCase().includes('lawson'))
-        );
-        if (lawson) {
-          const allowedLawsonIds = this.miningContracts
-            .filter((c) => (c.userId === lawson.id || c.userId === 'usr_1789815937003' || c.userId === 'Lawson mattey') && c.status === 'active')
-            .map((c) => c.id);
-          pruneUserContractsInMongo(lawson.id, allowedLawsonIds, 'Lawson mattey').catch(() => {});
-        }
-
-        const joenor = this.users.find((u) => u.username && u.username.toLowerCase().includes('joenor'));
-        if (joenor) {
-          const allowedJoenorIds = this.miningContracts.filter((c) => c.userId === joenor.id).map((c) => c.id);
-          pruneUserContractsInMongo(joenor.id, allowedJoenorIds).catch(() => {});
-        }
-      }
-
-      // Upsert deposits
-      if (this.deposits.length > 0) {
-        ops.push(...this.deposits.map((d) => DepositModel.updateOne({ id: d.id }, { $set: d }, { upsert: true })));
-      }
-
-      // Upsert withdrawals
-      this.cleanupSpecificRecords();
-      const { deleteWithdrawalFromMongo } = await import('./dbMongo');
-      deleteWithdrawalFromMongo('WD-057295').catch(() => {});
-      deleteWithdrawalFromMongo('WD-082027').catch(() => {});
-
-      if (this.withdrawals.length > 0) {
-        ops.push(...this.withdrawals.map((w) => WithdrawalModel.updateOne({ id: w.id }, { $set: w }, { upsert: true })));
-      }
-
-      // Upsert transactions
-      if (this.transactions.length > 0) {
-        ops.push(
-          ...this.transactions.map((t) => {
-            const filter = t.reference ? { $or: [{ id: t.id }, { reference: t.reference }] } : { id: t.id };
-            return TransactionModel.updateOne(filter, { $set: t }, { upsert: true });
-          })
-        );
-      }
-
-
-      // Upsert referrals
-      if (this.referrals.length > 0) {
-        ops.push(...this.referrals.map((r) => ReferralModel.updateOne({ id: r.id }, { $set: r }, { upsert: true })));
-      }
-
-      // Upsert chat messages
-      if (this.chatMessages.length > 0) {
-        ops.push(...this.chatMessages.map((cm) => ChatMessageModel.updateOne({ id: cm.id }, { $set: cm }, { upsert: true })));
-      }
-
-      // Upsert settings
-      ops.push(AppSettingsModel.updateOne({}, { $set: this.settings }, { upsert: true }));
-
-      await Promise.all(ops);
-    } catch (err) {
-      console.error('[MongoDB] Sync error:', err);
-    }
+    // CRITICAL: NEVER push in-memory arrays to MongoDB.
+    // MongoDB is the sole source of truth. Pushing memory would overwrite manual
+    // MongoDB edits and resurrect deleted records.
+    return;
   }
 
   public async syncFromMongo() {
@@ -1153,18 +569,16 @@ class DBStore {
           password: u.password,
           paymentMethod: u.paymentMethod,
           paymentAddress: u.paymentAddress,
-          balance: u.balance || 0,
-          totalDeposits: u.totalDeposits || 0,
+          balance: u.balance !== undefined ? u.balance : 0,
+          totalDeposits: u.totalDeposits !== undefined ? u.totalDeposits : 0,
           currency: u.currency || 'GHS',
-          referralCode: u.referralCode || u.refCode || 'CMX-' + Math.floor(Math.random() * 8999 + 1000),
+          referralCode: u.referralCode || u.refCode || u.username,
           referredBy: u.referredBy || null,
           vipLevel: u.vipLevel,
           vipTier: u.vipTier,
-          claimedMilestones: Array.isArray(u.claimedMilestones)
-            ? u.claimedMilestones
-            : (u.id === 'usr_1789653080484' || u.username === 'alienmonies' ? ['bronze'] : []),
-          totalRewards: u.totalRewards || 0,
-          activeContracts: u.activeContracts || 0,
+          claimedMilestones: Array.isArray(u.claimedMilestones) ? u.claimedMilestones : [],
+          totalRewards: u.totalRewards !== undefined ? u.totalRewards : 0,
+          activeContracts: u.activeContracts !== undefined ? u.activeContracts : 0,
           createdAt: u.createdAt || new Date().toISOString(),
           updatedAt: u.updatedAt || new Date().toISOString(),
         }));
@@ -1213,7 +627,7 @@ class DBStore {
 
       // Fetch unified withdrawals across MongoDB collections (respecting direct MongoDB updates & deletions)
       const mongoWithdrawals = await getUnifiedMongoWithdrawals();
-      if (mongoWithdrawals && mongoWithdrawals.length > 0) {
+      if (mongoWithdrawals) {
         this.withdrawals = mongoWithdrawals;
       }
       this.cleanupSpecificRecords();
@@ -1221,32 +635,9 @@ class DBStore {
       // Fetch unified mining contracts across MongoDB collections (respecting database deletions)
       const mongoContracts = await getUnifiedMongoContracts();
       if (mongoContracts) {
-        // For users who exist in MongoDB, mongoContracts is authoritative.
-        // We only retain memory contracts for local users who do not exist in MongoDB (e.g. offline/demo users).
-        const mongoUserIds = new Set(this.users.map((u) => u.id));
-        const nonMongoContracts = this.miningContracts.filter((c) => !mongoUserIds.has(c.userId));
-
-        const contractMap = new Map<string, any>();
-        for (const c of nonMongoContracts) {
-          if (c.id) contractMap.set(c.id, c);
-        }
-        for (const c of mongoContracts) {
-          if (c.id && c.id !== 'cntr_1789815937003_2') {
-            contractMap.set(c.id, c);
-          }
-        }
-        this.miningContracts = Array.from(contractMap.values());
+        this.miningContracts = mongoContracts;
       }
       this.reconcileUserContracts();
-
-      // Ensure deleted Lawson 2nd contract is never retained
-      this.miningContracts = this.miningContracts.filter(
-        (c) =>
-          !(
-            (c.userId === 'usr_1789815937003' || c.userId === 'Lawson mattey') &&
-            (c.id === 'cntr_1789815937003_2' || c.planName.includes('WELCOME') || c.amount === 50)
-          )
-      );
 
       const mongoTx = await TransactionModel.find().lean();
       if (mongoTx) {
@@ -1279,117 +670,6 @@ class DBStore {
           }
         }
         this.transactions = Array.from(txMap.values());
-      }
-
-
-      // Reconcile and synchronize withdrawal transactions with latest withdrawal addresses
-      const reconciled = this.reconcileWithdrawalTransactions();
-      if (isMongoConnected()) {
-        const ops: any[] = this.transactions
-          .filter((t) => t.type === 'withdrawal')
-          .map((t) =>
-            TransactionModel.updateOne(
-              { id: t.id },
-              { $set: { description: t.description, destination: t.destination, status: t.status, amount: t.amount } },
-              { upsert: true }
-            )
-          );
-
-        // Explicitly permanently delete phantom withdrawal WD-082027 and its transaction in Mongo
-        ops.push(
-          WithdrawalModel.deleteMany({
-            $or: [{ reference: 'WD-082027' }, { id: 'WD-082027' }, { id: { $regex: '082027' } }],
-          })
-        );
-        ops.push(
-          TransactionModel.deleteMany({
-            $or: [{ reference: 'WD-082027' }, { id: { $regex: '082027' } }, { description: { $regex: '082027' } }],
-          })
-        );
-        const mawuli = this.users.find((u) => u.id === 'usr_1789654475484' || u.username === 'Mawuli');
-        if (mawuli) {
-          ops.push(
-            UserModel.updateOne(
-              { id: mawuli.id },
-              { $set: { balance: mawuli.balance, totalRewards: mawuli.totalRewards, updatedAt: new Date().toISOString() } }
-            )
-          );
-          const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === 'active');
-          if (mawuliContract) {
-            ops.push(
-              MiningContractModel.updateOne(
-                { id: mawuliContract.id },
-                {
-                  $set: {
-                    accumulatedReward: mawuliContract.accumulatedReward,
-                    lastCalculatedAt: mawuliContract.lastCalculatedAt,
-                    updatedAt: new Date().toISOString(),
-                  },
-                }
-              )
-            );
-          }
-        }
-        // Remove duplicate yield transaction records from Mongo
-        ops.push(
-          TransactionModel.deleteMany({
-            userId: 'usr_1789654475484',
-            type: 'mining_reward',
-            reference: { $in: ['YIELD-_147-1887', 'YIELD-_147-8757', 'YIELD-_147-8307'] },
-          })
-        );
-
-        // Sync reconciled Ketikpo Christian records to Mongo
-        const ketikpo = this.users.find(
-          (u) =>
-            u.id === 'usr_1789474390086' ||
-            u.email === 'cketikpo@gmail.com' ||
-            (u.username && u.username.includes('Ketikpo'))
-        );
-        if (ketikpo) {
-          ops.push(
-            UserModel.updateOne(
-              { id: ketikpo.id },
-              { $set: { balance: ketikpo.balance, totalRewards: ketikpo.totalRewards, updatedAt: new Date().toISOString() } }
-            )
-          );
-          ops.push(
-            WithdrawalModel.updateOne(
-              { reference: 'WD-386599' },
-              {
-                $set: {
-                  status: 'approved',
-                  destination: ketikpo.paymentAddress || '0557188356',
-                  updatedAt: new Date().toISOString(),
-                },
-              }
-            )
-          );
-          ops.push(
-            TransactionModel.updateOne(
-              { reference: 'WD-386599' },
-              {
-                $set: {
-                  status: 'completed',
-                  destination: ketikpo.paymentAddress || '0557188356',
-                  description: `Withdrawal to ${ketikpo.paymentAddress || '0557188356'}`,
-                },
-              }
-            )
-          );
-        }
-
-        // Sync Lawson mattey and contracts to Mongo
-        const lawsonUser = this.users.find((u) => u.id === 'usr_1789815937003');
-        if (lawsonUser) {
-          ops.push(UserModel.updateOne({ id: lawsonUser.id }, { $set: lawsonUser }, { upsert: true }));
-          const lawsonCntrs = this.miningContracts.filter((c) => c.userId === lawsonUser.id);
-          for (const lc of lawsonCntrs) {
-            ops.push(MiningContractModel.updateOne({ id: lc.id }, { $set: lc }, { upsert: true }));
-          }
-        }
-
-        Promise.all(ops).catch((err) => console.warn('[DBStore] Notice updating reconciled transactions in Mongo:', err));
       }
 
       const mongoReferrals = await ReferralModel.find().lean();

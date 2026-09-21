@@ -53,6 +53,18 @@ export function initializeApp() {
     res.json({ status: 'ok', app: 'CloudMineX Digital Mining Dashboard', mode: 'Demo / Production Ready' });
   });
 
+  // Database fallback error handling middleware
+  app.use((err: any, req: any, res: any, next: any) => {
+    if (err && (err.name === 'MongooseError' || err.name === 'MongoNetworkError' || (err.message && err.message.includes('buffering timed out')))) {
+      console.warn('[AI Studio] Database offline — returning fallback response');
+      if (req.method === 'GET') {
+        return res.json(req.path.endsWith('s') || req.path.endsWith('s/') ? [] : {});
+      }
+      return res.status(503).json({ error: 'Service temporarily unavailable (database offline)' });
+    }
+    next(err);
+  });
+
   // Client SPA serving only when running standalone server (not inside Vercel serverless)
   if (!process.env.VERCEL) {
     if (process.env.NODE_ENV !== 'production') {

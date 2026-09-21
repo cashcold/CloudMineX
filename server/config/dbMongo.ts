@@ -1,4 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
+
+// Fail fast when MongoDB is unreachable, don't hang requests
+mongoose.set('bufferCommands', false);
 import {
   UserCloudMineX,
   MiningPlanCloudMineX,
@@ -251,6 +254,13 @@ export function isMongoConnected(): boolean {
   return (mongoose.connection.readyState as number) === 1;
 }
 
+export async function ensureMongoConnected(): Promise<boolean> {
+  const rawUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!rawUri) return false;
+  if (isMongoConnected()) return true;
+  return await connectMongoDB();
+}
+
 // Reset cache if connection closes or drops
 mongoose.connection.on('disconnected', () => {
   cached.conn = null;
@@ -300,23 +310,8 @@ export async function getUnifiedMongoWithdrawals(): Promise<WithdrawalCloudMineX
     console.warn('[MongoDB] Unified withdrawal fetch notice:', err);
   }
 
-  // Filter out any explicitly deleted withdrawal (such as WD-057295 or duplicate WD-082027)
   const result: WithdrawalCloudMineX[] = [];
   for (const w of withdrawalMap.values()) {
-    if (
-      w.reference === 'WD-057295' ||
-      w.id === 'WD-057295' ||
-      (typeof w.id === 'string' && w.id.includes('057295')) ||
-      w.reference === 'WD-082027' ||
-      w.id === 'WD-082027' ||
-      (typeof w.id === 'string' && w.id.includes('082027'))
-    ) {
-      continue;
-    }
-    // Ensure WD-215628 has updated amount of GHS 65.00
-    if (w.reference === 'WD-215628' || w.id === 'WD-215628' || (typeof w.id === 'string' && w.id.includes('215628'))) {
-      w.amount = 65.00;
-    }
     result.push({
       id: w.id,
       userId: w.userId,
@@ -378,13 +373,6 @@ export async function getUnifiedMongoContracts(): Promise<MiningContractCloudMin
 
   const result: MiningContractCloudMineX[] = [];
   for (const c of contractMap.values()) {
-    if (
-      c.id === 'cntr_1789815937003_2' ||
-      ((c.userId === 'usr_1789815937003' || c.userId === 'Lawson mattey') &&
-        (c.planName === 'WELCOME CLOUD RIG' || c.amount === 50))
-    ) {
-      continue;
-    }
     const duration = Number(c.duration || c.durationDays || 7);
     const amount = Number(c.amount || 100);
     const rewardRate = Number(c.rewardRate || 0.05);

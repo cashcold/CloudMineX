@@ -117,6 +117,8 @@ export class App extends Component {
             activeTab: isAdmin ? 'admin' : this.state.activeTab,
           });
           return;
+        } else {
+          localStorage.removeItem('cloudminex_user_id');
         }
       }
       
@@ -126,6 +128,10 @@ export class App extends Component {
         this.setState({ showLanding: true });
       }
     } catch (err) {
+      if (err?.response?.status === 404) {
+        localStorage.removeItem('cloudminex_user_id');
+        this.setState({ user: null });
+      }
       console.error('Error loading user:', err);
       if (isAdmin) {
         this.setState({ showLanding: false, activeTab: 'admin' });
@@ -179,7 +185,12 @@ export class App extends Component {
         this.setState({ user: newUser });
       }
     } catch (err) {
-      if (!silent) console.error('Error refreshing user:', err);
+      if (err?.response?.status === 404) {
+        localStorage.removeItem('cloudminex_user_id');
+        this.setState({ user: null, showLanding: true });
+      } else if (!silent) {
+        console.error('Error refreshing user:', err);
+      }
     }
   }
 

@@ -19,26 +19,40 @@ export function calculateEstimatedReward(amount: number, rewardRate: number, dur
  * Persists updated users, contracts, and transactions to MongoDB reliably with Promise.all
  */
 export async function syncYieldsToMongo(
-  updatedUserIds: Set<string>,
+  userYieldMap: Map<string, number>,
   updatedContracts: MiningContractCloudMineX[],
   createdTransactions: TransactionCloudMineX[]
 ): Promise<void> {
   if (!isMongoConnected()) return;
   try {
-    const userOps = Array.from(updatedUserIds).map((uid) => {
+    const userOps = Array.from(userYieldMap.entries()).map(([uid, yieldAmount]) => {
       const u = db.users.find((user) => user.id === uid);
-      if (!u) return Promise.resolve();
-      return UserModel.updateOne(
-        { id: u.id },
-        {
-          $set: {
-            balance: u.balance,
-            totalRewards: u.totalRewards,
-            activeContracts: u.activeContracts,
-            updatedAt: u.updatedAt,
-          },
-        }
-      );
+      if (yieldAmount > 0) {
+        return UserModel.updateOne(
+          { id: uid },
+          {
+            $inc: {
+              balance: yieldAmount,
+              totalRewards: yieldAmount,
+            },
+            $set: {
+              ...(u ? { activeContracts: u.activeContracts } : {}),
+              updatedAt: new Date().toISOString(),
+            },
+          }
+        );
+      } else if (u) {
+        return UserModel.updateOne(
+          { id: uid },
+          {
+            $set: {
+              activeContracts: u.activeContracts,
+              updatedAt: u.updatedAt,
+            },
+          }
+        );
+      }
+      return Promise.resolve();
     });
 
     const contractOps = updatedContracts.map((cntr) =>
@@ -88,7 +102,7 @@ export function processMiningYields(targetUserId?: string): { creditedTotal: num
   let contractsUpdated = 0;
   let contractsCompleted = 0;
   let hasDbChanges = false;
-  const updatedUserIds = new Set<string>();
+  const userYieldMap = new Map<string, number>();
   const updatedContracts: MiningContractCloudMineX[] = [];
   const createdTransactions: TransactionCloudMineX[] = [];
 
@@ -156,6 +170,7 @@ export function processMiningYields(targetUserId?: string): { creditedTotal: num
       creditedTotal += dailyReward;
       newDaysCredited++;
       contractCreditedCount++;
+      userYieldMap.set(user.id, (userYieldMap.get(user.id) || 0) + dailyReward);
     }
 
     // Update contract accumulated reward to match true verified cycle count
@@ -167,7 +182,9 @@ export function processMiningYields(targetUserId?: string): { creditedTotal: num
 
       contractsUpdated++;
       hasDbChanges = true;
-      updatedUserIds.add(user.id);
+      if (!userYieldMap.has(user.id)) {
+        userYieldMap.set(user.id, 0);
+      }
       if (!updatedContracts.includes(contract)) {
         updatedContracts.push(contract);
       }
@@ -184,7 +201,9 @@ export function processMiningYields(targetUserId?: string): { creditedTotal: num
 
       contractsCompleted++;
       hasDbChanges = true;
-      updatedUserIds.add(user.id);
+      if (!userYieldMap.has(user.id)) {
+        userYieldMap.set(user.id, 0);
+      }
       if (!updatedContracts.includes(contract)) {
         updatedContracts.push(contract);
       }
@@ -212,7 +231,7 @@ export function processMiningYields(targetUserId?: string): { creditedTotal: num
 
   if (hasDbChanges) {
     db.saveData();
-    syncYieldsToMongo(updatedUserIds, updatedContracts, createdTransactions).catch((err) =>
+    syncYieldsToMongo(userYieldMap, updatedContracts, createdTransactions).catch((err) =>
       console.error('[MongoDB] Background yield sync notice:', err)
     );
   }
