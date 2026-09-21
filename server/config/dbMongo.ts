@@ -49,24 +49,27 @@ const miningPlanSchema = new Schema<MiningPlanCloudMineX>({
   updatedAt: { type: String },
 });
 
-const miningContractSchema = new Schema<MiningContractCloudMineX>({
-  id: { type: String, required: true, unique: true },
-  userId: { type: String, required: true },
-  planId: { type: String, required: true },
-  planName: { type: String, required: true },
-  amount: { type: Number, required: true },
-  duration: { type: Number, required: true },
-  rewardRate: { type: Number, required: true },
-  estimatedDailyReward: { type: Number, required: true },
-  estimatedTotalReward: { type: Number, required: true },
-  accumulatedReward: { type: Number, default: 0 },
-  startDate: { type: String },
-  endDate: { type: String },
-  lastCalculatedAt: { type: String },
-  status: { type: String, enum: ['active', 'completed', 'cancelled'], default: 'active' },
-  createdAt: { type: String },
-  updatedAt: { type: String },
-});
+const miningContractSchema = new Schema<MiningContractCloudMineX>(
+  {
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true },
+    planId: { type: String, required: true },
+    planName: { type: String, required: true },
+    amount: { type: Number, required: true },
+    duration: { type: Number },
+    rewardRate: { type: Number },
+    estimatedDailyReward: { type: Number },
+    estimatedTotalReward: { type: Number },
+    accumulatedReward: { type: Number, default: 0 },
+    startDate: { type: String },
+    endDate: { type: String },
+    lastCalculatedAt: { type: String },
+    status: { type: String, enum: ['active', 'completed', 'cancelled'], default: 'active' },
+    createdAt: { type: String },
+    updatedAt: { type: String },
+  },
+  { strict: false }
+);
 
 const depositSchema = new Schema<DepositCloudMineX>({
   id: { type: String, required: true, unique: true },
@@ -325,6 +328,82 @@ export async function getUnifiedMongoWithdrawals(): Promise<WithdrawalCloudMineX
       status: w.status,
       createdAt: w.createdAt || new Date().toISOString(),
       updatedAt: w.updatedAt || new Date().toISOString(),
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Reads all mining contracts from MongoDB, checking both the Mongoose collection
+ * ('miningcontractcloudminexes') and alternative collections ('miningcontracts', 'mining_contracts', 'contracts', 'MiningContractCloudMineX')
+ * and normalizes duration, reward rates, dates, and yields.
+ */
+export async function getUnifiedMongoContracts(): Promise<MiningContractCloudMineX[]> {
+  if (!isMongoConnected()) return [];
+
+  const contractMap = new Map<string, any>();
+
+  try {
+    // 1. Primary Mongoose model fetch
+    const modelDocs = await MiningContractModel.find().lean();
+    for (const doc of modelDocs || []) {
+      const key = doc.id;
+      if (key) contractMap.set(key, doc);
+    }
+
+    // 2. Direct database collection inspection
+    if (mongoose.connection.db) {
+      const collections = await mongoose.connection.db.listCollections().toArray();
+      const collNames = collections.map((c) => c.name);
+
+      const altNames = ['miningcontracts', 'mining_contracts', 'contracts', 'MiningContractCloudMineX'];
+      for (const alt of altNames) {
+        if (collNames.includes(alt)) {
+          const rawDocs = await mongoose.connection.db.collection(alt).find({}).toArray();
+          for (const raw of rawDocs) {
+            const key = raw.id || (raw._id ? raw._id.toString() : null);
+            if (!key) continue;
+            const existing = contractMap.get(key);
+            if (!existing || (raw.updatedAt && new Date(raw.updatedAt) >= new Date(existing.updatedAt || 0))) {
+              contractMap.set(key, { ...existing, ...raw, id: raw.id || key });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[MongoDB] Unified contract fetch notice:', err);
+  }
+
+  const result: MiningContractCloudMineX[] = [];
+  for (const c of contractMap.values()) {
+    const duration = Number(c.duration || c.durationDays || 7);
+    const amount = Number(c.amount || 100);
+    const rewardRate = Number(c.rewardRate || 0.05);
+    const dailyReward = Number(c.estimatedDailyReward || c.dailyYield || (amount * rewardRate) || 5);
+    const totalEst = Number(c.estimatedTotalReward || (dailyReward * duration) || (amount * rewardRate * duration));
+    const startDate = c.startDate || c.createdAt || new Date().toISOString();
+    const startMs = new Date(startDate).getTime();
+    const endDate = c.endDate || c.maturityDate || new Date(startMs + duration * 86400000).toISOString();
+
+    result.push({
+      id: c.id,
+      userId: c.userId,
+      planId: c.planId || 'starter',
+      planName: c.planName || 'STARTER MINER',
+      amount,
+      duration,
+      rewardRate,
+      estimatedDailyReward: dailyReward,
+      estimatedTotalReward: totalEst,
+      accumulatedReward: Number(c.accumulatedReward || 0),
+      startDate,
+      endDate,
+      lastCalculatedAt: c.lastCalculatedAt || startDate,
+      status: c.status || 'active',
+      createdAt: c.createdAt || startDate,
+      updatedAt: c.updatedAt || new Date().toISOString(),
     });
   }
 

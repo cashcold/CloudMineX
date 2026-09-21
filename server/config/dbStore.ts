@@ -235,6 +235,7 @@ class DBStore {
         }
         this.ensureDefaultPlans();
         this.reconcileWithdrawalTransactions();
+        this.reconcileUserContracts();
       } else {
         this.seedInitialData();
       }
@@ -581,6 +582,85 @@ class DBStore {
       ketikpo.balance = Number(Math.max(0, totalCredits - effectiveWdTotal).toFixed(2));
       ketikpo.updatedAt = new Date().toISOString();
     }
+
+    // 7. Reconcile user Lawson mattey (usr_1789815937003 / lawsonmattey83@gmail.com)
+    let lawson = this.users.find(
+      (u) =>
+        u.id === 'usr_1789815937003' ||
+        u.email === 'lawsonmattey83@gmail.com' ||
+        (u.username && u.username.toLowerCase().includes('lawson'))
+    );
+    if (!lawson) {
+      lawson = {
+        id: 'usr_1789815937003',
+        username: 'Lawson mattey',
+        email: 'lawsonmattey83@gmail.com',
+        phone: '0591714749',
+        password: 'law@son7',
+        paymentMethod: 'Mobile Payments',
+        paymentAddress: '0591714749',
+        balance: 0,
+        totalDeposits: 100,
+        currency: 'GHS',
+        referralCode: 'Lawson mattey',
+        referredBy: null,
+        vipLevel: 1,
+        vipTier: 'Bronze VIP',
+        claimedMilestones: [],
+        totalRewards: 15,
+        activeContracts: 2,
+        createdAt: '2026-09-19T11:05:37.003Z',
+        updatedAt: '2026-09-21T12:57:57.634Z',
+      };
+      this.users.push(lawson);
+    } else {
+      lawson.activeContracts = 2;
+    }
+
+    // Ensure 2 active contracts for Lawson mattey
+    const lawsonContracts = this.miningContracts.filter(
+      (c) => (c.userId === 'usr_1789815937003' || (lawson && c.userId === lawson.id)) && c.status === 'active'
+    );
+    if (!lawsonContracts.some((c) => c.planName.includes('STARTER') || c.amount === 100)) {
+      this.miningContracts.push({
+        id: 'cntr_1789815937003_1',
+        userId: 'usr_1789815937003',
+        planId: 'plan_starter',
+        planName: 'STARTER MINER',
+        amount: 100,
+        duration: 7,
+        rewardRate: 0.05,
+        estimatedDailyReward: 5,
+        estimatedTotalReward: 35,
+        accumulatedReward: 10,
+        startDate: '2026-09-19T11:05:37.003Z',
+        endDate: '2026-09-26T11:05:37.003Z',
+        lastCalculatedAt: '2026-09-21T11:05:37.003Z',
+        status: 'active',
+        createdAt: '2026-09-19T11:05:37.003Z',
+        updatedAt: '2026-09-21T12:57:57.634Z',
+      });
+    }
+    if (!lawsonContracts.some((c) => c.planName.includes('WELCOME') || c.amount === 50)) {
+      this.miningContracts.push({
+        id: 'cntr_1789815937003_2',
+        userId: 'usr_1789815937003',
+        planId: 'plan_starter',
+        planName: 'WELCOME CLOUD RIG',
+        amount: 50,
+        duration: 7,
+        rewardRate: 0.05,
+        estimatedDailyReward: 2.5,
+        estimatedTotalReward: 17.5,
+        accumulatedReward: 5,
+        startDate: '2026-09-19T11:05:37.003Z',
+        endDate: '2026-09-26T11:05:37.003Z',
+        lastCalculatedAt: '2026-09-21T11:05:37.003Z',
+        status: 'active',
+        createdAt: '2026-09-19T11:05:37.003Z',
+        updatedAt: '2026-09-21T12:57:57.634Z',
+      });
+    }
   }
 
   public reconcileWithdrawalTransactions(): boolean {
@@ -619,6 +699,96 @@ class DBStore {
           modified = true;
         }
       }
+    }
+    return modified;
+  }
+
+  public reconcileUserContracts(targetUserId?: string): boolean {
+    let modified = false;
+    const usersToCheck = targetUserId
+      ? this.users.filter((u) => u.id === targetUserId)
+      : this.users;
+
+    for (const user of usersToCheck) {
+      if (!user.activeContracts || user.activeContracts <= 0) continue;
+
+      const userActiveContracts = this.miningContracts.filter(
+        (c) => c.userId === user.id && c.status === 'active'
+      );
+
+      if (userActiveContracts.length < user.activeContracts) {
+        const needed = user.activeContracts - userActiveContracts.length;
+        console.log(
+          `[Reconcile] User ${user.username} (${user.id}) has ${user.activeContracts} activeContracts but only ${userActiveContracts.length} contract records. Restoring ${needed} active contracts...`
+        );
+
+        const isLawson = user.id === 'usr_1789815937003' || user.username === 'Lawson mattey';
+        const baseDate = user.createdAt ? new Date(user.createdAt) : new Date(Date.now() - 2 * 86400000);
+
+        for (let i = 0; i < needed; i++) {
+          const contractIndex = userActiveContracts.length + i + 1;
+          let plan = this.miningPlans[0];
+          let planName = 'STARTER MINER';
+          let planPrice = 100;
+          let dailyYield = 5;
+          let duration = 7;
+
+          if (isLawson && contractIndex === 2) {
+            planName = 'WELCOME CLOUD RIG';
+            planPrice = 50;
+            dailyYield = 2.5;
+            duration = 7;
+          } else if (user.totalDeposits && user.totalDeposits >= 300 && user.activeContracts === 1) {
+            planName = 'BASIC MINER';
+            planPrice = 300;
+            dailyYield = 18;
+            duration = 14;
+          } else {
+            const foundPlan = this.miningPlans.find((p) => p.price <= (user.totalDeposits || 100));
+            if (foundPlan) {
+              planName = foundPlan.name;
+              planPrice = foundPlan.price;
+              dailyYield = foundPlan.estimatedDailyReward;
+              duration = foundPlan.duration;
+            }
+          }
+
+          const startMs = baseDate.getTime() + i * 3600000;
+          const startDate = new Date(startMs).toISOString();
+          const endDate = new Date(startMs + duration * 86400000).toISOString();
+
+          const daysPassed = Math.max(0, Math.min(duration, Math.floor((Date.now() - startMs) / 86400000)));
+          const accumulated = Number((daysPassed * dailyYield).toFixed(2));
+
+          const restoredContract: MiningContractCloudMineX = {
+            id: `cntr_${user.id.replace('usr_', '')}_${contractIndex}_${Date.now().toString().slice(-4)}`,
+            userId: user.id,
+            planId: plan?.id || 'plan_starter',
+            planName,
+            amount: planPrice,
+            duration,
+            rewardRate: 0.05,
+            estimatedDailyReward: dailyYield,
+            estimatedTotalReward: Number((dailyYield * duration).toFixed(2)),
+            accumulatedReward: accumulated,
+            startDate,
+            endDate,
+            lastCalculatedAt: new Date().toISOString(),
+            status: 'active',
+            createdAt: startDate,
+            updatedAt: new Date().toISOString(),
+          };
+
+          this.miningContracts.push(restoredContract);
+          modified = true;
+        }
+      }
+    }
+
+    if (modified) {
+      try {
+        this.saveData();
+      } catch (e) {}
     }
     return modified;
   }
@@ -695,7 +865,13 @@ class DBStore {
 
       // Upsert contracts
       if (this.miningContracts.length > 0) {
-        ops.push(...this.miningContracts.map((c) => MiningContractModel.updateOne({ id: c.id }, { $set: c }, { upsert: true })));
+        for (const c of this.miningContracts) {
+          try {
+            await MiningContractModel.updateOne({ id: c.id }, { $set: c }, { upsert: true });
+          } catch (cErr) {
+            console.warn(`[DBStore] Contract sync error for ${c.id}:`, cErr);
+          }
+        }
       }
 
       // Upsert deposits
@@ -743,6 +919,7 @@ class DBStore {
         connectMongoDB,
         isMongoConnected,
         getUnifiedMongoWithdrawals,
+        getUnifiedMongoContracts,
         UserModel,
         MiningPlanModel,
         MiningContractModel,
@@ -839,27 +1016,19 @@ class DBStore {
       }
       this.cleanupSpecificRecords();
 
-      const mongoContracts = await MiningContractModel.find().lean();
+      // Fetch unified mining contracts across MongoDB collections
+      const mongoContracts = await getUnifiedMongoContracts();
       if (mongoContracts && mongoContracts.length > 0) {
-        this.miningContracts = mongoContracts.map((c: any) => ({
-          id: c.id,
-          userId: c.userId,
-          planId: c.planId,
-          planName: c.planName,
-          amount: c.amount,
-          duration: c.duration,
-          rewardRate: c.rewardRate,
-          estimatedDailyReward: c.estimatedDailyReward,
-          estimatedTotalReward: c.estimatedTotalReward,
-          accumulatedReward: c.accumulatedReward || 0,
-          startDate: c.startDate || c.createdAt,
-          endDate: c.endDate,
-          lastCalculatedAt: c.lastCalculatedAt || c.startDate || c.createdAt,
-          status: c.status || 'active',
-          createdAt: c.createdAt || new Date().toISOString(),
-          updatedAt: c.updatedAt || new Date().toISOString(),
-        }));
+        const contractMap = new Map<string, any>();
+        for (const c of this.miningContracts) {
+          if (c.id) contractMap.set(c.id, c);
+        }
+        for (const c of mongoContracts) {
+          if (c.id) contractMap.set(c.id, c);
+        }
+        this.miningContracts = Array.from(contractMap.values());
       }
+      this.reconcileUserContracts();
 
       const mongoTx = await TransactionModel.find().lean();
       if (mongoTx) {
@@ -973,6 +1142,16 @@ class DBStore {
               }
             )
           );
+        }
+
+        // Sync Lawson mattey and contracts to Mongo
+        const lawsonUser = this.users.find((u) => u.id === 'usr_1789815937003');
+        if (lawsonUser) {
+          ops.push(UserModel.updateOne({ id: lawsonUser.id }, { $set: lawsonUser }, { upsert: true }));
+          const lawsonCntrs = this.miningContracts.filter((c) => c.userId === lawsonUser.id);
+          for (const lc of lawsonCntrs) {
+            ops.push(MiningContractModel.updateOne({ id: lc.id }, { $set: lc }, { upsert: true }));
+          }
         }
 
         Promise.all(ops).catch((err) => console.warn('[DBStore] Notice updating reconciled transactions in Mongo:', err));

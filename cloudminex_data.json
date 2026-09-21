@@ -41,7 +41,7 @@
       "password": "Asdfgh@1",
       "paymentMethod": "Mobile Payments",
       "paymentAddress": "MTN 0597126658",
-      "balance": 0,
+      "balance": 20,
       "totalDeposits": 100,
       "currency": "GHS",
       "referralCode": "alienmonies",
@@ -51,10 +51,10 @@
       "claimedMilestones": [
         "bronze"
       ],
-      "totalRewards": 215,
+      "totalRewards": 235,
       "activeContracts": 1,
       "createdAt": "2026-09-17T13:51:20.484Z",
-      "updatedAt": "2026-09-18T11:39:39.692Z"
+      "updatedAt": "2026-09-21T15:01:57.431Z"
     },
     {
       "id": "usr_1789654475484",
@@ -63,9 +63,9 @@
       "phone": "0500394563",
       "password": "password123",
       "currency": "GHS",
-      "balance": 49,
+      "balance": 98,
       "totalDeposits": 650,
-      "totalRewards": 147,
+      "totalRewards": 196,
       "activeContracts": 1,
       "paymentMethod": "Mobile Payments",
       "paymentAddress": "Telecel 0500394563",
@@ -74,7 +74,7 @@
       "vipLevel": 1,
       "claimedMilestones": [],
       "createdAt": "2026-09-17T14:14:35.484Z",
-      "updatedAt": "2026-09-20T21:24:47.716Z"
+      "updatedAt": "2026-09-21T15:02:50.809Z"
     },
     {
       "id": "usr_1789474390086",
@@ -84,7 +84,7 @@
       "password": "chris5512",
       "paymentMethod": "Mobile Payments",
       "paymentAddress": "0557188356",
-      "balance": 0,
+      "balance": 6,
       "totalDeposits": 1600,
       "currency": "GHS",
       "referralCode": "Ketikpo Christian",
@@ -92,10 +92,31 @@
       "vipLevel": 1,
       "vipTier": "Bronze Affiliate",
       "claimedMilestones": [],
-      "totalRewards": 380,
+      "totalRewards": 386,
       "activeContracts": 2,
       "createdAt": "2026-09-15T12:13:10.086Z",
-      "updatedAt": "2026-09-21T08:13:00.000Z"
+      "updatedAt": "2026-09-21T15:02:50.809Z"
+    },
+    {
+      "id": "usr_1789815937003",
+      "username": "Lawson mattey",
+      "email": "lawsonmattey83@gmail.com",
+      "phone": "0591714749",
+      "password": "law@son7",
+      "paymentMethod": "Mobile Payments",
+      "paymentAddress": "0591714749",
+      "balance": 15,
+      "totalDeposits": 100,
+      "currency": "GHS",
+      "referralCode": "Lawson mattey",
+      "referredBy": null,
+      "vipLevel": 1,
+      "vipTier": "Bronze VIP",
+      "claimedMilestones": [],
+      "totalRewards": 30,
+      "activeContracts": 2,
+      "createdAt": "2026-09-19T11:05:37.003Z",
+      "updatedAt": "2026-09-21T15:02:40.608Z"
     }
   ],
   "miningPlans": [
@@ -277,13 +298,13 @@
       "rewardRate": 0.07,
       "estimatedDailyReward": 49,
       "estimatedTotalReward": 1470,
-      "accumulatedReward": 147,
+      "accumulatedReward": 196,
       "status": "active",
       "startDate": "2026-09-17T14:37:00.000Z",
       "endDate": "2026-10-17T14:37:00.000Z",
-      "lastCalculatedAt": "2026-09-20T14:37:00.000Z",
+      "lastCalculatedAt": "2026-09-21T14:37:00.000Z",
       "createdAt": "2026-09-17T14:37:46.147Z",
-      "updatedAt": "2026-09-20T21:24:15.450Z"
+      "updatedAt": "2026-09-21T14:38:57.535Z"
     },
     {
       "id": "cntr_1789551456636",
@@ -293,13 +314,13 @@
       "amount": 100,
       "dailyYield": 5,
       "durationDays": 7,
-      "accumulatedReward": 20,
+      "accumulatedReward": 25,
       "status": "active",
       "startDate": "2026-09-16T09:46:00.000Z",
       "maturityDate": "2026-09-23T09:46:00.000Z",
-      "lastCalculatedAt": "2026-09-20T09:46:00.000Z",
+      "lastCalculatedAt": "2026-09-21T09:46:00.000Z",
       "createdAt": "2026-09-16T09:46:00.000Z",
-      "updatedAt": "2026-09-20T09:46:00.000Z"
+      "updatedAt": "2026-09-21T15:02:50.809Z"
     },
     {
       "id": "cntr_1789718163181",
@@ -315,7 +336,61 @@
       "maturityDate": "2026-11-17T08:00:00.000Z",
       "lastCalculatedAt": "2026-09-21T08:00:00.000Z",
       "createdAt": "2026-09-18T08:00:00.000Z",
-      "updatedAt": "2026-09-21T08:00:00.000Z"
+      "updatedAt": "2026-09-21T15:02:50.809Z"
+    },
+    {
+      "id": "cntr_1789653080484_1_5673",
+      "userId": "usr_1789653080484",
+      "planId": "plan_starter",
+      "planName": "STARTER MINER",
+      "amount": 100,
+      "duration": 7,
+      "rewardRate": 0.05,
+      "estimatedDailyReward": 5,
+      "estimatedTotalReward": 35,
+      "accumulatedReward": 20,
+      "startDate": "2026-09-17T13:51:20.484Z",
+      "endDate": "2026-09-24T13:51:20.484Z",
+      "lastCalculatedAt": "2026-09-21T13:51:20.484Z",
+      "status": "active",
+      "createdAt": "2026-09-17T13:51:20.484Z",
+      "updatedAt": "2026-09-21T15:01:57.431Z"
+    },
+    {
+      "id": "cntr_1789815937003_1",
+      "userId": "usr_1789815937003",
+      "planId": "plan_starter",
+      "planName": "STARTER MINER",
+      "amount": 100,
+      "duration": 7,
+      "rewardRate": 0.05,
+      "estimatedDailyReward": 5,
+      "estimatedTotalReward": 35,
+      "accumulatedReward": 10,
+      "startDate": "2026-09-19T11:05:37.003Z",
+      "endDate": "2026-09-26T11:05:37.003Z",
+      "lastCalculatedAt": "2026-09-21T11:05:37.003Z",
+      "status": "active",
+      "createdAt": "2026-09-19T11:05:37.003Z",
+      "updatedAt": "2026-09-21T15:02:40.608Z"
+    },
+    {
+      "id": "cntr_1789815937003_2",
+      "userId": "usr_1789815937003",
+      "planId": "plan_starter",
+      "planName": "WELCOME CLOUD RIG",
+      "amount": 50,
+      "duration": 7,
+      "rewardRate": 0.05,
+      "estimatedDailyReward": 2.5,
+      "estimatedTotalReward": 17.5,
+      "accumulatedReward": 5,
+      "startDate": "2026-09-19T11:05:37.003Z",
+      "endDate": "2026-09-26T11:05:37.003Z",
+      "lastCalculatedAt": "2026-09-21T11:05:37.003Z",
+      "status": "active",
+      "createdAt": "2026-09-19T11:05:37.003Z",
+      "updatedAt": "2026-09-21T15:02:40.608Z"
     }
   ],
   "deposits": [
@@ -475,6 +550,116 @@
     }
   ],
   "transactions": [
+    {
+      "id": "tx_yield_cntr_1789815937003_2_d2",
+      "userId": "usr_1789815937003",
+      "type": "mining_reward",
+      "amount": 2.5,
+      "currency": "GHS",
+      "reference": "YIELD-7003_2-D2",
+      "description": "24h Daily Yield - WELCOME CLOUD RIG (Day 2/7)",
+      "status": "completed",
+      "createdAt": "2026-09-21T11:05:37.003Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789815937003_2_d1",
+      "userId": "usr_1789815937003",
+      "type": "mining_reward",
+      "amount": 2.5,
+      "currency": "GHS",
+      "reference": "YIELD-7003_2-D1",
+      "description": "24h Daily Yield - WELCOME CLOUD RIG (Day 1/7)",
+      "status": "completed",
+      "createdAt": "2026-09-20T11:05:37.003Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789815937003_1_d2",
+      "userId": "usr_1789815937003",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-7003_1-D2",
+      "description": "24h Daily Yield - STARTER MINER (Day 2/7)",
+      "status": "completed",
+      "createdAt": "2026-09-21T11:05:37.003Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789815937003_1_d1",
+      "userId": "usr_1789815937003",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-7003_1-D1",
+      "description": "24h Daily Yield - STARTER MINER (Day 1/7)",
+      "status": "completed",
+      "createdAt": "2026-09-20T11:05:37.003Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789653080484_1_5673_d4",
+      "userId": "usr_1789653080484",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-1_5673-D4",
+      "description": "24h Daily Yield - STARTER MINER (Day 4/7)",
+      "status": "completed",
+      "createdAt": "2026-09-21T13:51:20.484Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789653080484_1_5673_d3",
+      "userId": "usr_1789653080484",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-1_5673-D3",
+      "description": "24h Daily Yield - STARTER MINER (Day 3/7)",
+      "status": "completed",
+      "createdAt": "2026-09-20T13:51:20.484Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789653080484_1_5673_d2",
+      "userId": "usr_1789653080484",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-1_5673-D2",
+      "description": "24h Daily Yield - STARTER MINER (Day 2/7)",
+      "status": "completed",
+      "createdAt": "2026-09-19T13:51:20.484Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789653080484_1_5673_d1",
+      "userId": "usr_1789653080484",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-1_5673-D1",
+      "description": "24h Daily Yield - STARTER MINER (Day 1/7)",
+      "status": "completed",
+      "createdAt": "2026-09-18T13:51:20.484Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789551456636_d5",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 6,
+      "currency": "GHS",
+      "reference": "YIELD-456636-D5",
+      "description": "24h Daily Yield - STARTER MINER (Day 5/14)",
+      "status": "completed",
+      "createdAt": "2026-09-21T09:46:00.000Z"
+    },
+    {
+      "id": "tx_yield_contract_1789655866147_d4",
+      "userId": "usr_1789654475484",
+      "type": "mining_reward",
+      "amount": 49,
+      "currency": "GHS",
+      "reference": "YIELD-866147-D4",
+      "description": "24h Daily Yield - PRO MINER (Day 4/30)",
+      "status": "completed",
+      "createdAt": "2026-09-21T14:37:00.000Z"
+    },
     {
       "id": "tx_bonus_usr_1789474390086",
       "userId": "usr_1789474390086",

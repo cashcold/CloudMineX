@@ -1,10 +1,45 @@
 import React, { Component } from 'react';
-import { Cpu, Zap, ArrowRight, TrendingUp, AlertCircle, MessageSquare, Cloud, Clock, CheckCircle2, ArrowUpRight, ArrowDownLeft, ShieldCheck } from 'lucide-react';
+import {
+  Cpu,
+  Zap,
+  ArrowRight,
+  TrendingUp,
+  AlertCircle,
+  MessageSquare,
+  Cloud,
+  Clock,
+  CheckCircle2,
+  ArrowUpRight,
+  ArrowDownLeft,
+  ShieldCheck,
+  Timer,
+  Calendar,
+  RefreshCw,
+  Activity,
+  Sparkles,
+} from 'lucide-react';
 import BalanceCard from '../components/BalanceCard';
 import QuickActions from '../components/QuickActions';
 import MiningPlanCard from '../components/MiningPlanCard';
 import LiveActivityStream from '../components/LiveActivityStream';
 import { userService, miningService } from '../services/api';
+
+const formatCurrency = (amount, currency = 'GHS') => {
+  return `${currency} ${Number(amount || 0).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  const d = new Date(dateString);
+  return d.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+};
 
 export class Home extends Component {
   constructor(props) {
@@ -18,11 +53,22 @@ export class Home extends Component {
       activePlanId: null,
       errorMessage: '',
       successMessage: '',
+      currentTime: Date.now(),
     };
+    this.timerInterval = null;
   }
 
   componentDidMount() {
     this.loadData();
+    this.timerInterval = setInterval(() => {
+      this.setState({ currentTime: Date.now() });
+    }, 1000);
+  }
+
+  componentWillUnmount() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+    }
   }
 
   componentDidUpdate(prevProps) {
@@ -116,6 +162,12 @@ export class Home extends Component {
           });
         }
 
+        // Refresh contracts to reflect updated accumulatedReward
+        const contractsRes = await miningService.getUserContracts(user.id);
+        if (contractsRes && contractsRes.contracts) {
+          this.setState({ userContracts: contractsRes.contracts });
+        }
+
         setTimeout(() => this.setState({ successMessage: '' }), 4000);
       }
     } catch (err) {
@@ -125,7 +177,8 @@ export class Home extends Component {
 
   render() {
     const { onNavigate } = this.props;
-    const { user, plans, isLoading, activePlanId, errorMessage, successMessage, isTicking } = this.state;
+    const { user, plans, userContracts, isLoading, activePlanId, errorMessage, successMessage, isTicking, currentTime } = this.state;
+    const activeContracts = (userContracts || []).filter((c) => c.status === 'active');
 
     return (
       <div id="home-page" className="space-y-5 pb-10">
@@ -236,6 +289,176 @@ export class Home extends Component {
 
         {/* Quick Actions */}
         <QuickActions onNavigate={onNavigate} />
+
+        {/* ================= ACTIVE CLOUD MINING RIGS SECTION ================= */}
+        <section id="active-miners-section" className="space-y-3.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-[#00D4A8]/20 border border-[#00D4A8]/40 flex items-center justify-center text-[#00D4A8]">
+                <Cpu className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-white text-sm tracking-wider uppercase">Active Mining Rigs</h3>
+                  <span className="px-2 py-0.5 rounded-full bg-[#00D4A8]/20 border border-[#00D4A8]/40 text-[#00D4A8] text-[10px] font-extrabold uppercase">
+                    {activeContracts.length} {activeContracts.length === 1 ? 'Unit' : 'Units'} Online
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400">High-density cloud hashrate generating 24h daily automated yields</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => this.handleTickRewards()}
+                disabled={isTicking}
+                className="px-2.5 py-1.5 rounded-lg bg-[#10253A] border border-[#00D4A8]/30 text-[#00D4A8] text-xs font-bold hover:bg-[#00D4A8]/10 transition-all flex items-center gap-1"
+                title="Synchronize & Collect 24h Yield"
+              >
+                <RefreshCw className={`w-3 h-3 ${isTicking ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Sync Yield</span>
+              </button>
+              <button
+                onClick={() => onNavigate('income')}
+                className="px-2.5 py-1.5 rounded-lg bg-[#07111F] border border-slate-700 text-slate-300 text-xs font-bold hover:text-white hover:border-[#00D4A8]/50 transition-all flex items-center gap-1"
+              >
+                <span>Ledger</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {activeContracts.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {activeContracts.map((cntr) => {
+                const startMs = new Date(cntr.startDate || cntr.createdAt).getTime();
+                const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+                const elapsedSinceStart = Math.max(0, currentTime - startMs);
+                const nextCycleTime = startMs + (Math.floor(elapsedSinceStart / ONE_DAY_MS) + 1) * ONE_DAY_MS;
+                const diffMs = Math.max(0, nextCycleTime - currentTime);
+
+                const hoursLeft = Math.floor(diffMs / (1000 * 60 * 60));
+                const minsLeft = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                const secsLeft = Math.floor((diffMs % (1000 * 60)) / 1000);
+                const countdownText = `${String(hoursLeft).padStart(2, '0')}h ${String(minsLeft).padStart(2, '0')}m ${String(secsLeft).padStart(2, '0')}s`;
+
+                const durationDays = cntr.duration || 7;
+                const totalDurationMs = durationDays * ONE_DAY_MS;
+                const progressPercent = Math.min(100, Math.max(0, Math.round((elapsedSinceStart / totalDurationMs) * 100)));
+                const daysPassed = Math.min(durationDays, Math.floor(elapsedSinceStart / ONE_DAY_MS));
+
+                return (
+                  <div
+                    key={cntr.id}
+                    className="relative overflow-hidden bg-gradient-to-br from-[#10253A] to-[#0D1B2A] p-4 rounded-2xl border-2 border-[#00D4A8]/30 shadow-lg shadow-[#00D4A8]/5 space-y-3.5 hover:border-[#00D4A8]/60 transition-all"
+                  >
+                    {/* Glowing corner indicator */}
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-[#00D4A8]/10 rounded-full blur-xl pointer-events-none" />
+
+                    {/* Top Row: Plan info & status */}
+                    <div className="flex items-start justify-between gap-2 relative z-10">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <Zap className="w-4 h-4 text-[#00D4A8] fill-[#00D4A8]" />
+                          <h4 className="font-extrabold text-white text-sm tracking-wide">{cntr.planName}</h4>
+                        </div>
+                        <p className="text-[11px] text-[#94A3B8] mt-0.5">
+                          Hash Capacity: <strong className="text-white">{formatCurrency(cntr.amount, user?.currency || 'GHS')}</strong> • Duration: <strong className="text-[#00D4A8]">{durationDays} Days</strong>
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#00D4A8]/10 border border-[#00D4A8]/40 shrink-0">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00D4A8] opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00D4A8]"></span>
+                        </span>
+                        <span className="text-[#00D4A8] text-[9px] font-extrabold uppercase tracking-wider">
+                          HASHING 24/7
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Middle Countdown & Yield Box */}
+                    <div className="bg-[#07111F]/80 p-3 rounded-xl border border-slate-800 space-y-2 relative z-10">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-300">
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="text-[11px] text-slate-400">Next Daily Yield:</span>
+                          <span className="text-amber-300 font-mono font-bold text-xs">{countdownText}</span>
+                        </div>
+
+                        <div className="flex items-center gap-1 text-[#00D4A8] font-extrabold text-xs">
+                          <span>+{formatCurrency(cntr.estimatedDailyReward, user?.currency || 'GHS')}</span>
+                          <span className="text-[9px] text-[#94A3B8]">/ 24h</span>
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="space-y-1 pt-1">
+                        <div className="flex items-center justify-between text-[10px] text-slate-400">
+                          <span>Cycle Progress (Day {Math.min(durationDays, daysPassed + 1)} of {durationDays})</span>
+                          <span className="text-[#2DD4FF] font-bold font-mono">{progressPercent}%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] rounded-full transition-all duration-300"
+                            style={{ width: `${progressPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom stats row & quick action */}
+                    <div className="flex items-center justify-between pt-1 text-xs relative z-10">
+                      <div>
+                        <p className="text-[10px] text-slate-400">Accumulated Credited</p>
+                        <p className="font-extrabold text-[#00D4A8] text-xs">
+                          {formatCurrency(cntr.accumulatedReward || 0, user?.currency || 'GHS')}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => this.handleTickRewards()}
+                          disabled={isTicking}
+                          className="px-2.5 py-1 rounded-lg bg-[#00D4A8] text-[#07111F] font-extrabold text-[10px] uppercase hover:brightness-110 active:scale-95 transition-all flex items-center gap-1 shadow-sm"
+                        >
+                          <Zap className="w-2.5 h-2.5 fill-[#07111F]" />
+                          <span>Sync Yield</span>
+                        </button>
+                        <button
+                          onClick={() => onNavigate('income')}
+                          className="px-2 py-1 rounded-lg bg-[#10253A] border border-slate-700 text-slate-300 hover:text-white font-bold text-[10px] uppercase transition-all"
+                        >
+                          Ledger
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-[#10253A]/60 p-4 rounded-2xl border border-slate-800 text-center space-y-2">
+              <div className="w-10 h-10 mx-auto rounded-full bg-[#00D4A8]/10 border border-[#00D4A8]/30 flex items-center justify-center text-[#00D4A8]">
+                <Cloud className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-white text-xs font-bold">No Active Cloud Rigs Running</p>
+                <p className="text-[10px] text-slate-400 max-w-sm mx-auto mt-0.5">
+                  Select a mining contract below to deploy dedicated cloud hashpower and start receiving automated 24-hour yields directly to your balance.
+                </p>
+              </div>
+              <a
+                href="#plans-section"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs uppercase hover:brightness-110 transition-all shadow-md mt-1"
+              >
+                <span>Deploy Miner Below</span>
+                <ArrowRight className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+        </section>
 
         {/* Live Activity Stream (Fake & Real Payouts & Deposits) */}
         <LiveActivityStream />

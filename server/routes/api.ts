@@ -784,7 +784,7 @@ apiRouter.get('/mining-plans/:id', (req: Request, res: Response) => {
 });
 
 // ================= MINING CONTRACTS =================
-apiRouter.post('/mining/start', (req: Request, res: Response) => {
+apiRouter.post('/mining/start', async (req: Request, res: Response) => {
   const { userId, planId } = req.body;
 
   const user = db.users.find((u) => u.id === userId);
@@ -849,6 +849,19 @@ apiRouter.post('/mining/start', (req: Request, res: Response) => {
 
   db.saveData();
 
+  if (isMongoConnected()) {
+    try {
+      const { MiningContractModel, UserModel, TransactionModel } = await import('../config/dbMongo');
+      Promise.all([
+        MiningContractModel.updateOne({ id: contract.id }, { $set: contract }, { upsert: true }),
+        UserModel.updateOne({ id: user.id }, { $set: { balance: user.balance, activeContracts: user.activeContracts, updatedAt: user.updatedAt } }),
+        TransactionModel.updateOne({ id: tx.id }, { $set: tx }, { upsert: true }),
+      ]).catch((mErr) => console.warn('[Mining Start] Async Mongo update notice:', mErr));
+    } catch (mErr) {
+      console.warn('[Mining Start] Direct Mongo update notice:', mErr);
+    }
+  }
+
   res.json({
     success: true,
     message: `Successfully activated ${plan.name}! Mining contract started.`,
@@ -863,6 +876,7 @@ apiRouter.get('/mining/user/:userId', async (req: Request, res: Response) => {
       await db.syncFromMongo();
     } catch (e) {}
   }
+  db.reconcileUserContracts(req.params.userId);
   processMiningYields(req.params.userId);
   const contracts = db.miningContracts.filter((c) => c.userId === req.params.userId);
   res.json({ success: true, contracts });
@@ -1451,6 +1465,7 @@ apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
       await db.syncFromMongo();
     } catch (e) {}
   }
+  db.reconcileUserContracts(userId);
   processMiningYields(userId);
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
