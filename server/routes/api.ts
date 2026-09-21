@@ -1371,6 +1371,43 @@ const handleWithdrawal = async (req: Request, res: Response) => {
     createdAt: new Date().toISOString(),
   });
 
+  // Directly update MongoDB immediately to ensure durability under serverless environments
+  try {
+    const { isMongoConnected, UserModel, WithdrawalModel, TransactionModel } = await import('../config/dbMongo');
+    if (isMongoConnected()) {
+      await Promise.all([
+        UserModel.updateOne(
+          { id: user.id },
+          { $set: { balance: user.balance, updatedAt: user.updatedAt } }
+        ),
+        WithdrawalModel.updateOne(
+          { id: withdrawal.id },
+          { $set: withdrawal },
+          { upsert: true }
+        ),
+        TransactionModel.updateOne(
+          { reference: ref },
+          {
+            $set: {
+              id: `tx_wd_${Date.now()}`,
+              userId: user.id,
+              type: 'withdrawal',
+              amount: numAmount,
+              currency: 'GHS',
+              reference: ref,
+              description: `Withdrawal request to ${destination || provider}`,
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+            },
+          },
+          { upsert: true }
+        ),
+      ]);
+    }
+  } catch (mErr) {
+    console.warn('[Withdrawal] Immediate Mongo update notice:', mErr);
+  }
+
   await db.saveData();
 
   // Instant Alert: Send Telegram Notification to Admin Phone
@@ -2155,43 +2192,92 @@ apiRouter.post('/admin/users/:id/credit', (req: Request, res: Response) => {
 });
 
 // Admin: Approve/Reject Withdrawal
-apiRouter.post('/admin/withdrawals/:id/approve', (req: Request, res: Response) => {
-  const withdrawal = db.withdrawals.find((w) => w.id === req.params.id);
+apiRouter.post('/admin/withdrawals/:id/approve', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const withdrawal = db.withdrawals.find((w) => w.id === id || w.reference === id);
   if (!withdrawal) return res.status(404).json({ success: false, message: 'Withdrawal not found' });
+
+  const wasRejected = withdrawal.status === 'rejected';
+  const user = db.users.find((u) => u.id === withdrawal.userId);
+
+  // If this withdrawal was previously rejected and refunded, re-deduct balance upon approval
+  if (wasRejected && user) {
+    user.balance = Number(Math.max(0, user.balance - withdrawal.amount).toFixed(2));
+    user.updatedAt = new Date().toISOString();
+  }
 
   withdrawal.status = 'approved';
   withdrawal.updatedAt = new Date().toISOString();
 
   // Find corresponding transaction
-  const tx = db.transactions.find((t) => t.reference === withdrawal.reference);
-  if (tx) tx.status = 'completed';
+  const tx = db.transactions.find(
+    (t) =>
+      (t.reference && t.reference === withdrawal.reference) ||
+      (t.type === 'withdrawal' && t.id.includes(withdrawal.id.replace('wd_', '')))
+  );
+  if (tx) {
+    tx.status = 'completed';
+    if (withdrawal.destination) {
+      tx.description = `Withdrawal to ${withdrawal.destination}`;
+      tx.destination = withdrawal.destination;
+    }
+  }
 
-  db.saveData();
-  res.json({ success: true, message: 'Withdrawal approved successfully', withdrawal });
+  await db.saveData();
+
+  try {
+    const { isMongoConnected, WithdrawalModel, TransactionModel, UserModel } = await import('../config/dbMongo');
+    if (isMongoConnected()) {
+      await Promise.all([
+        WithdrawalModel.updateOne(
+          { $or: [{ id: withdrawal.id }, { reference: withdrawal.reference }] },
+          { $set: { status: 'approved', destination: withdrawal.destination, updatedAt: withdrawal.updatedAt } }
+        ),
+        tx
+          ? TransactionModel.updateOne(
+              { $or: [{ id: tx.id }, { reference: withdrawal.reference }] },
+              { $set: { status: 'completed', description: tx.description, destination: tx.destination } }
+            )
+          : Promise.resolve(),
+        wasRejected && user
+          ? UserModel.updateOne(
+              { id: user.id },
+              { $set: { balance: user.balance, updatedAt: user.updatedAt } }
+            )
+          : Promise.resolve(),
+      ]);
+    }
+  } catch (mErr) {
+    console.warn('[Admin Approve] Mongo sync notice:', mErr);
+  }
+
+  res.json({ success: true, message: 'Withdrawal approved successfully', withdrawal, user });
 });
 
-apiRouter.post('/admin/withdrawals/:id/reject', (req: Request, res: Response) => {
-  const withdrawal = db.withdrawals.find((w) => w.id === req.params.id);
+apiRouter.post('/admin/withdrawals/:id/reject', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const withdrawal = db.withdrawals.find((w) => w.id === id || w.reference === id);
   if (!withdrawal) return res.status(404).json({ success: false, message: 'Withdrawal not found' });
 
-  const shouldRefund = req.body?.refund !== false && req.query?.noRefund !== 'true' && withdrawal.status !== 'rejected';
+  const wasAlreadyRejected = withdrawal.status === 'rejected';
+  const shouldRefund = req.body?.refund !== false && req.query?.noRefund !== 'true' && !wasAlreadyRejected;
 
-  if (withdrawal.status !== 'approved' && withdrawal.status !== 'rejected') {
-    if (shouldRefund) {
-      // Refund balance to user
-      const user = db.users.find((u) => u.id === withdrawal.userId);
-      if (user) {
-        user.balance = Number((user.balance + withdrawal.amount).toFixed(2));
-        user.updatedAt = new Date().toISOString();
-      }
-    }
+  const user = db.users.find((u) => u.id === withdrawal.userId);
+  if (shouldRefund && user) {
+    // Refund balance to user
+    user.balance = Number((user.balance + withdrawal.amount).toFixed(2));
+    user.updatedAt = new Date().toISOString();
   }
 
   withdrawal.status = 'rejected';
   withdrawal.updatedAt = new Date().toISOString();
 
   // Find corresponding transaction
-  const tx = db.transactions.find((t) => t.reference === withdrawal.reference);
+  const tx = db.transactions.find(
+    (t) =>
+      (t.reference && t.reference === withdrawal.reference) ||
+      (t.type === 'withdrawal' && t.id.includes(withdrawal.id.replace('wd_', '')))
+  );
   if (tx) {
     tx.status = 'failed';
     if (!shouldRefund) {
@@ -2199,11 +2285,39 @@ apiRouter.post('/admin/withdrawals/:id/reject', (req: Request, res: Response) =>
     }
   }
 
-  db.saveData();
+  await db.saveData();
+
+  try {
+    const { isMongoConnected, WithdrawalModel, TransactionModel, UserModel } = await import('../config/dbMongo');
+    if (isMongoConnected()) {
+      await Promise.all([
+        WithdrawalModel.updateOne(
+          { $or: [{ id: withdrawal.id }, { reference: withdrawal.reference }] },
+          { $set: { status: 'rejected', updatedAt: withdrawal.updatedAt } }
+        ),
+        tx
+          ? TransactionModel.updateOne(
+              { $or: [{ id: tx.id }, { reference: withdrawal.reference }] },
+              { $set: { status: 'failed', description: tx.description } }
+            )
+          : Promise.resolve(),
+        shouldRefund && user
+          ? UserModel.updateOne(
+              { id: user.id },
+              { $set: { balance: user.balance, updatedAt: user.updatedAt } }
+            )
+          : Promise.resolve(),
+      ]);
+    }
+  } catch (mErr) {
+    console.warn('[Admin Reject] Mongo sync notice:', mErr);
+  }
+
   res.json({
     success: true,
     message: shouldRefund ? 'Withdrawal rejected and balance refunded' : 'Withdrawal rejected without refund (duplicate prevention)',
     withdrawal,
+    user,
   });
 });
 

@@ -75,6 +75,27 @@
       "claimedMilestones": [],
       "createdAt": "2026-09-17T14:14:35.484Z",
       "updatedAt": "2026-09-20T21:24:47.716Z"
+    },
+    {
+      "id": "usr_1789474390086",
+      "username": "Ketikpo Christian",
+      "email": "cketikpo@gmail.com",
+      "phone": "0557188356",
+      "password": "chris5512",
+      "paymentMethod": "Mobile Payments",
+      "paymentAddress": "0557188356",
+      "balance": 0,
+      "totalDeposits": 1600,
+      "currency": "GHS",
+      "referralCode": "Ketikpo Christian",
+      "referredBy": null,
+      "vipLevel": 1,
+      "vipTier": "Bronze Affiliate",
+      "claimedMilestones": [],
+      "totalRewards": 380,
+      "activeContracts": 2,
+      "createdAt": "2026-09-15T12:13:10.086Z",
+      "updatedAt": "2026-09-21T08:13:00.000Z"
     }
   ],
   "miningPlans": [
@@ -263,6 +284,38 @@
       "lastCalculatedAt": "2026-09-20T14:37:00.000Z",
       "createdAt": "2026-09-17T14:37:46.147Z",
       "updatedAt": "2026-09-20T21:24:15.450Z"
+    },
+    {
+      "id": "cntr_1789551456636",
+      "userId": "usr_1789474390086",
+      "planId": "starter",
+      "planName": "STARTER MINER",
+      "amount": 100,
+      "dailyYield": 5,
+      "durationDays": 7,
+      "accumulatedReward": 20,
+      "status": "active",
+      "startDate": "2026-09-16T09:46:00.000Z",
+      "maturityDate": "2026-09-23T09:46:00.000Z",
+      "lastCalculatedAt": "2026-09-20T09:46:00.000Z",
+      "createdAt": "2026-09-16T09:46:00.000Z",
+      "updatedAt": "2026-09-20T09:46:00.000Z"
+    },
+    {
+      "id": "cntr_1789718163181",
+      "userId": "usr_1789474390086",
+      "planId": "advanced",
+      "planName": "ADVANCED MINER",
+      "amount": 1500,
+      "dailyYield": 120,
+      "durationDays": 60,
+      "accumulatedReward": 360,
+      "status": "active",
+      "startDate": "2026-09-18T08:00:00.000Z",
+      "maturityDate": "2026-11-17T08:00:00.000Z",
+      "lastCalculatedAt": "2026-09-21T08:00:00.000Z",
+      "createdAt": "2026-09-18T08:00:00.000Z",
+      "updatedAt": "2026-09-21T08:00:00.000Z"
     }
   ],
   "deposits": [
@@ -382,6 +435,18 @@
   ],
   "withdrawals": [
     {
+      "id": "wd_1789718386599",
+      "userId": "usr_1789474390086",
+      "amount": 245,
+      "currency": "GHS",
+      "destination": "0557188356",
+      "provider": "Mobile Payments",
+      "status": "approved",
+      "reference": "WD-386599",
+      "createdAt": "2026-09-21T08:13:00.000Z",
+      "updatedAt": "2026-09-21T08:13:00.000Z"
+    },
+    {
       "id": "wd_589789",
       "userId": "usr_1789654475484",
       "type": "fiat",
@@ -410,6 +475,142 @@
     }
   ],
   "transactions": [
+    {
+      "id": "tx_bonus_usr_1789474390086",
+      "userId": "usr_1789474390086",
+      "type": "welcome_bonus",
+      "amount": 50,
+      "currency": "GHS",
+      "reference": "WELCOME-BONUS-0086",
+      "description": "Welcome Registration Bonus",
+      "status": "completed",
+      "createdAt": "2026-09-15T12:13:10.086Z"
+    },
+    {
+      "id": "tx_wd_1789551095549",
+      "userId": "usr_1789474390086",
+      "type": "withdrawal",
+      "amount": 50,
+      "currency": "GHS",
+      "reference": "WD-095549",
+      "description": "Withdrawal to 0557188356",
+      "destination": "0557188356",
+      "status": "completed",
+      "createdAt": "2026-09-16T12:00:00.000Z"
+    },
+    {
+      "id": "tx_wd_1789551318841",
+      "userId": "usr_1789474390086",
+      "type": "withdrawal",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "WD-318841",
+      "description": "Withdrawal to 0557188356",
+      "destination": "0557188356",
+      "status": "completed",
+      "createdAt": "2026-09-17T10:00:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789551456636_d1",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-_499-0249",
+      "description": "24h Daily Yield - STARTER MINER (Day 1/7)",
+      "status": "completed",
+      "createdAt": "2026-09-17T09:46:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789551456636_d2",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-_499-3684",
+      "description": "24h Daily Yield - STARTER MINER (Day 2/7)",
+      "status": "completed",
+      "createdAt": "2026-09-18T09:46:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789718163181_d1",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 120,
+      "currency": "GHS",
+      "reference": "YIELD-36_835-D1",
+      "description": "24h Daily Yield - ADVANCED MINER (Day 1/60)",
+      "status": "completed",
+      "createdAt": "2026-09-19T08:00:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789551456636_d3",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-_499-4702",
+      "description": "24h Daily Yield - STARTER MINER (Day 3/7)",
+      "status": "completed",
+      "createdAt": "2026-09-19T09:46:00.000Z"
+    },
+    {
+      "id": "tx_wd_1789650470419",
+      "userId": "usr_1789474390086",
+      "type": "withdrawal",
+      "amount": 130,
+      "currency": "GHS",
+      "reference": "WD-470419",
+      "description": "Withdrawal to 0557188356",
+      "destination": "0557188356",
+      "status": "completed",
+      "createdAt": "2026-09-19T10:00:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789718163181_d2",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 120,
+      "currency": "GHS",
+      "reference": "YIELD-36_835-D2",
+      "description": "24h Daily Yield - ADVANCED MINER (Day 2/60)",
+      "status": "completed",
+      "createdAt": "2026-09-20T08:00:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789551456636_d4",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 5,
+      "currency": "GHS",
+      "reference": "YIELD-54_499-D4",
+      "description": "24h Daily Yield - STARTER MINER (Day 4/7)",
+      "status": "completed",
+      "createdAt": "2026-09-20T09:46:00.000Z"
+    },
+    {
+      "id": "tx_yield_cntr_1789718163181_d3",
+      "userId": "usr_1789474390086",
+      "type": "mining_reward",
+      "amount": 120,
+      "currency": "GHS",
+      "reference": "YIELD-36_835-D3",
+      "description": "24h Daily Yield - ADVANCED MINER (Day 3/60)",
+      "status": "completed",
+      "createdAt": "2026-09-21T08:00:00.000Z"
+    },
+    {
+      "id": "tx_wd_1789718386599",
+      "userId": "usr_1789474390086",
+      "type": "withdrawal",
+      "amount": 245,
+      "currency": "GHS",
+      "reference": "WD-386599",
+      "description": "Withdrawal to 0557188356",
+      "destination": "0557188356",
+      "status": "completed",
+      "createdAt": "2026-09-21T08:13:00.000Z"
+    },
     {
       "id": "tx_yield_contract_1789655866147_d3",
       "userId": "usr_1789654475484",
