@@ -1663,9 +1663,47 @@ apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
       status: 'completed',
     } as any).lean();
 
+    const userWithdrawals: any[] = await WithdrawalModel.find({
+      $or: userFilter,
+    } as any).lean();
+
     const rawTxs: any[] = await TransactionModel.find({
       $or: userFilter,
     } as any).sort({ createdAt: -1 }).lean();
+
+    const orphanTxIds: string[] = [];
+    const activeTxs: any[] = [];
+
+    for (const tx of rawTxs) {
+      if (tx.type === 'withdrawal') {
+        const matchedWd = userWithdrawals.find(
+          (w) =>
+            (tx.reference && w.reference === tx.reference) ||
+            (tx.id && tx.id.includes(w.id.replace('wd_', ''))) ||
+            (w.reference && tx.reference && tx.reference.includes(w.reference))
+        );
+        if (!matchedWd) {
+          // Withdrawal document was deleted from MongoDB!
+          // Exclude from dashboard and purge orphan transaction from MongoDB
+          if (tx.id) orphanTxIds.push(tx.id);
+          continue;
+        }
+        const isDone = matchedWd.status === 'approved' || matchedWd.status === 'completed';
+        const dest = matchedWd.destination || tx.destination || 'Mobile Wallet';
+        activeTxs.push({
+          ...tx,
+          destination: dest,
+          description: `${isDone ? 'Withdrawal' : 'Withdrawal request'} to ${dest}`,
+          status: isDone ? 'completed' : (matchedWd.status === 'rejected' ? 'failed' : tx.status),
+        });
+      } else {
+        activeTxs.push(tx);
+      }
+    }
+
+    if (orphanTxIds.length > 0) {
+      TransactionModel.deleteMany({ id: { $in: orphanTxIds } } as any).exec().catch(() => {});
+    }
 
     const todayEstReward = activeContracts.reduce((sum, c) => sum + (c.estimatedDailyReward || 0), 0);
 
@@ -1679,7 +1717,7 @@ apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
       completedContractsCount: completedContracts.length,
       activeContracts,
       completedContracts,
-      transactions: rawTxs,
+      transactions: activeTxs,
     });
   }
 
@@ -1692,6 +1730,15 @@ apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
   const completedContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === 'completed');
   const rawTxs = db.transactions
     .filter((t) => t.userId === userId)
+    .filter((t) => {
+      if (t.type === 'withdrawal') {
+        const matchedWd = db.withdrawals.find(
+          (w) => (t.reference && w.reference === t.reference) || (t.id && t.id.includes(w.id.replace('wd_', '')))
+        );
+        return Boolean(matchedWd);
+      }
+      return true;
+    })
     .map((t) => {
       if (t.type === 'withdrawal') {
         const matchedWd = db.withdrawals.find(

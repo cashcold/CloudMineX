@@ -416,6 +416,20 @@ class DBStore {
     const activeRefs = new Set(this.withdrawals.map((w) => w.reference).filter(Boolean));
     const activeIds = new Set(this.withdrawals.map((w) => w.id).filter(Boolean));
 
+    const initialTxCount = this.transactions.length;
+    this.transactions = this.transactions.filter((t) => {
+      if (t.type === 'withdrawal') {
+        const hasMatchingWd =
+          (t.reference && activeRefs.has(t.reference)) ||
+          this.withdrawals.some((w) => (t.id && t.id.includes(w.id.replace('wd_', ''))) || (w.reference && t.reference === w.reference));
+        return hasMatchingWd;
+      }
+      return true;
+    });
+    if (this.transactions.length !== initialTxCount) {
+      modified = true;
+    }
+
     for (const wd of this.withdrawals) {
       if (!wd.reference && !wd.id) continue;
       // Match all transactions by reference, or by wd id in tx id
