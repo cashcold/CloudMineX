@@ -871,14 +871,18 @@ apiRouter.post('/mining/start', async (req: Request, res: Response) => {
 });
 
 apiRouter.get('/mining/user/:userId', async (req: Request, res: Response) => {
+  const userId = req.params.userId;
   if (isMongoConnected()) {
     try {
       await db.syncFromMongo();
     } catch (e) {}
   }
-  db.reconcileUserContracts(req.params.userId);
-  processMiningYields(req.params.userId);
-  const contracts = db.miningContracts.filter((c) => c.userId === req.params.userId);
+  db.reconcileUserContracts(userId);
+  processMiningYields(userId);
+  
+  const user = db.users.find((u) => u.id === userId || u.username === userId || (u.username && u.username.toLowerCase() === userId.toLowerCase()));
+  const actualUserId = user ? user.id : userId;
+  const contracts = db.miningContracts.filter((c) => (c.userId === actualUserId || (user && c.userId === user.username)) && c.status === 'active');
   res.json({ success: true, contracts });
 });
 

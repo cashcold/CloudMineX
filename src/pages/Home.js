@@ -111,8 +111,8 @@ export class Home extends Component {
   }
 
   async handleStartMining(plan) {
-    const { user } = this.state;
-    if (!user) return;
+    const { user, activePlanId } = this.state;
+    if (!user || activePlanId) return;
 
     this.setState({ activePlanId: plan.id, errorMessage: '', successMessage: '' });
 

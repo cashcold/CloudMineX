@@ -74,7 +74,7 @@
       "vipLevel": 1,
       "claimedMilestones": [],
       "createdAt": "2026-09-17T14:14:35.484Z",
-      "updatedAt": "2026-09-21T15:02:50.809Z"
+      "updatedAt": "2026-09-21T15:30:44.185Z"
     },
     {
       "id": "usr_1789474390086",
@@ -95,7 +95,7 @@
       "totalRewards": 386,
       "activeContracts": 2,
       "createdAt": "2026-09-15T12:13:10.086Z",
-      "updatedAt": "2026-09-21T15:02:50.809Z"
+      "updatedAt": "2026-09-21T15:30:44.185Z"
     },
     {
       "id": "usr_1789815937003",
@@ -117,6 +117,27 @@
       "activeContracts": 2,
       "createdAt": "2026-09-19T11:05:37.003Z",
       "updatedAt": "2026-09-21T15:02:40.608Z"
+    },
+    {
+      "id": "usr_joenor",
+      "username": "Joenor",
+      "email": "joenor@cloudminex.io",
+      "phone": "0550000000",
+      "password": "password123",
+      "paymentMethod": "Mobile Payments",
+      "paymentAddress": "0550000000",
+      "balance": 0,
+      "totalDeposits": 100,
+      "currency": "GHS",
+      "referralCode": "Joenor",
+      "referredBy": null,
+      "vipLevel": 1,
+      "vipTier": "Bronze VIP",
+      "claimedMilestones": [],
+      "totalRewards": 0,
+      "activeContracts": 1,
+      "createdAt": "2026-09-21T15:30:34.229Z",
+      "updatedAt": "2026-09-21T15:30:34.229Z"
     }
   ],
   "miningPlans": [
@@ -320,7 +341,7 @@
       "maturityDate": "2026-09-23T09:46:00.000Z",
       "lastCalculatedAt": "2026-09-21T09:46:00.000Z",
       "createdAt": "2026-09-16T09:46:00.000Z",
-      "updatedAt": "2026-09-21T15:02:50.809Z"
+      "updatedAt": "2026-09-21T15:30:44.185Z"
     },
     {
       "id": "cntr_1789718163181",
@@ -336,7 +357,7 @@
       "maturityDate": "2026-11-17T08:00:00.000Z",
       "lastCalculatedAt": "2026-09-21T08:00:00.000Z",
       "createdAt": "2026-09-18T08:00:00.000Z",
-      "updatedAt": "2026-09-21T15:02:50.809Z"
+      "updatedAt": "2026-09-21T15:30:44.185Z"
     },
     {
       "id": "cntr_1789653080484_1_5673",
@@ -391,6 +412,24 @@
       "status": "active",
       "createdAt": "2026-09-19T11:05:37.003Z",
       "updatedAt": "2026-09-21T15:02:40.608Z"
+    },
+    {
+      "id": "cntr_joenor_starter_1",
+      "userId": "usr_joenor",
+      "planId": "plan_starter",
+      "planName": "STARTER MINER",
+      "amount": 100,
+      "duration": 7,
+      "rewardRate": 0.05,
+      "estimatedDailyReward": 5,
+      "estimatedTotalReward": 35,
+      "accumulatedReward": 0,
+      "startDate": "2026-09-21T15:30:34.229Z",
+      "endDate": "2026-09-28T15:30:34.229Z",
+      "lastCalculatedAt": "2026-09-21T15:30:34.229Z",
+      "status": "active",
+      "createdAt": "2026-09-21T15:30:34.229Z",
+      "updatedAt": "2026-09-21T15:30:34.229Z"
     }
   ],
   "deposits": [

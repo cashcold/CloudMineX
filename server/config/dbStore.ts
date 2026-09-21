@@ -661,6 +661,86 @@ class DBStore {
         updatedAt: '2026-09-21T12:57:57.634Z',
       });
     }
+
+    // 8. Reconcile user Joenor (@Joenor) - deposit 100 GHC, exactly 1 active Starter Miner (100 GHS)
+    let joenor = this.users.find(
+      (u) =>
+        (u.username && u.username.toLowerCase().includes('joenor')) ||
+        (u.email && u.email.toLowerCase().includes('joenor')) ||
+        u.id === 'usr_joenor'
+    );
+    if (!joenor) {
+      joenor = {
+        id: 'usr_joenor',
+        username: 'Joenor',
+        email: 'joenor@cloudminex.io',
+        phone: '0550000000',
+        password: 'password123',
+        paymentMethod: 'Mobile Payments',
+        paymentAddress: '0550000000',
+        balance: 0,
+        totalDeposits: 100,
+        currency: 'GHS',
+        referralCode: 'Joenor',
+        referredBy: null,
+        vipLevel: 1,
+        vipTier: 'Bronze VIP',
+        claimedMilestones: [],
+        totalRewards: 0,
+        activeContracts: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      this.users.push(joenor);
+    } else {
+      joenor.activeContracts = 1;
+      joenor.totalDeposits = 100;
+    }
+
+    // Enforce exactly 1 active contract for Joenor, removing any excess duplicate contracts
+    const joenorContracts = this.miningContracts.filter(
+      (c) => (c.userId === joenor.id || (joenor.username && c.userId === joenor.username)) && c.status === 'active'
+    );
+    if (joenorContracts.length > 1) {
+      // Keep only the first valid 100 GHS Starter Miner
+      const keep = joenorContracts[0];
+      keep.amount = 100;
+      keep.planName = 'STARTER MINER';
+      keep.duration = 7;
+      keep.estimatedDailyReward = 5;
+      keep.estimatedTotalReward = 35;
+      
+      const excess = joenorContracts.slice(1);
+      const removeIds = new Set(excess.map((c) => c.id));
+      this.miningContracts = this.miningContracts.filter((c) => !removeIds.has(c.id));
+
+      // Asynchronously delete the excess contracts from MongoDB across all collections
+      import('./dbMongo').then(({ deleteContractFromMongo }) => {
+        for (const rem of excess) {
+          deleteContractFromMongo(rem.id).catch(() => {});
+        }
+      }).catch(() => {});
+    } else if (joenorContracts.length === 0) {
+      // Create the 1 legitimate 100 GHS Starter Miner contract for Joenor
+      this.miningContracts.push({
+        id: `cntr_joenor_starter_1`,
+        userId: joenor.id,
+        planId: 'plan_starter',
+        planName: 'STARTER MINER',
+        amount: 100,
+        duration: 7,
+        rewardRate: 0.05,
+        estimatedDailyReward: 5,
+        estimatedTotalReward: 35,
+        accumulatedReward: 0,
+        startDate: joenor.createdAt || new Date().toISOString(),
+        endDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+        lastCalculatedAt: new Date().toISOString(),
+        status: 'active',
+        createdAt: joenor.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
   }
 
   public reconcileWithdrawalTransactions(): boolean {
@@ -782,6 +862,34 @@ class DBStore {
           this.miningContracts.push(restoredContract);
           modified = true;
         }
+      } else if (userActiveContracts.length > user.activeContracts) {
+        // User has more active contracts than their official activeContracts count.
+        // Prune the excess duplicate contracts so they match user.activeContracts.
+        const excessCount = userActiveContracts.length - user.activeContracts;
+        console.log(
+          `[Reconcile] User ${user.username} (${user.id}) has ${userActiveContracts.length} active contracts but activeContracts is ${user.activeContracts}. Pruning ${excessCount} excess contract(s)...`
+        );
+
+        // Keep the first user.activeContracts contracts and remove the rest
+        const toKeep = new Set(userActiveContracts.slice(0, user.activeContracts).map((c) => c.id));
+        const toRemove = userActiveContracts.slice(user.activeContracts);
+
+        this.miningContracts = this.miningContracts.filter((c) => {
+          if (c.userId === user.id && c.status === 'active') {
+            return toKeep.has(c.id);
+          }
+          return true;
+        });
+
+        // Permanently delete the excess duplicate contracts from MongoDB across all collections
+        for (const rem of toRemove) {
+          try {
+            import('./dbMongo').then(({ deleteContractFromMongo }) => {
+              deleteContractFromMongo(rem.id).catch(() => {});
+            });
+          } catch (e) {}
+        }
+        modified = true;
       }
     }
 
@@ -871,6 +979,14 @@ class DBStore {
           } catch (cErr) {
             console.warn(`[DBStore] Contract sync error for ${c.id}:`, cErr);
           }
+        }
+
+        // Clean up any pruned contracts for Joenor in Mongo across all collections
+        const joenor = this.users.find((u) => u.username && u.username.toLowerCase().includes('joenor'));
+        if (joenor) {
+          const allowedJoenorIds = this.miningContracts.filter((c) => c.userId === joenor.id).map((c) => c.id);
+          const { pruneUserContractsInMongo } = await import('./dbMongo');
+          pruneUserContractsInMongo(joenor.id, allowedJoenorIds).catch(() => {});
         }
       }
 
@@ -1016,11 +1132,16 @@ class DBStore {
       }
       this.cleanupSpecificRecords();
 
-      // Fetch unified mining contracts across MongoDB collections
+      // Fetch unified mining contracts across MongoDB collections (respecting database deletions)
       const mongoContracts = await getUnifiedMongoContracts();
-      if (mongoContracts && mongoContracts.length > 0) {
+      if (mongoContracts) {
+        // For users who exist in MongoDB, mongoContracts is authoritative.
+        // We only retain memory contracts for local users who do not exist in MongoDB (e.g. offline/demo users).
+        const mongoUserIds = new Set(this.users.map((u) => u.id));
+        const nonMongoContracts = this.miningContracts.filter((c) => !mongoUserIds.has(c.userId));
+
         const contractMap = new Map<string, any>();
-        for (const c of this.miningContracts) {
+        for (const c of nonMongoContracts) {
           if (c.id) contractMap.set(c.id, c);
         }
         for (const c of mongoContracts) {

@@ -513,3 +513,55 @@ export async function updateWithdrawalAmountInMongo(idOrRef: string, newAmount: 
     return false;
   }
 }
+
+/**
+ * Permanently deletes a contract by ID across all MongoDB collections.
+ */
+export async function deleteContractFromMongo(contractId: string): Promise<boolean> {
+  if (!isMongoConnected()) return false;
+  try {
+    const filter = { id: contractId };
+    await MiningContractModel.deleteMany(filter);
+    if (mongoose.connection.db) {
+      const colls = await mongoose.connection.db.listCollections().toArray();
+      const collNames = colls.map((c) => c.name);
+      for (const c of ['miningcontracts', 'mining_contracts', 'contracts', 'MiningContractCloudMineX', 'miningcontractcloudminexes']) {
+        if (collNames.includes(c)) {
+          await mongoose.connection.db.collection(c).deleteMany(filter);
+        }
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error('[MongoDB] Error deleting contract from MongoDB:', err);
+    return false;
+  }
+}
+
+/**
+ * Prunes excess contracts for a user in MongoDB so only the allowed number of contracts remain.
+ */
+export async function pruneUserContractsInMongo(userId: string, keepContractIds: string[]): Promise<boolean> {
+  if (!isMongoConnected()) return false;
+  try {
+    const filter = {
+      userId,
+      id: { $nin: keepContractIds },
+    };
+    await MiningContractModel.deleteMany(filter);
+    if (mongoose.connection.db) {
+      const colls = await mongoose.connection.db.listCollections().toArray();
+      const collNames = colls.map((c) => c.name);
+      for (const c of ['miningcontracts', 'mining_contracts', 'contracts', 'MiningContractCloudMineX', 'miningcontractcloudminexes']) {
+        if (collNames.includes(c)) {
+          await mongoose.connection.db.collection(c).deleteMany(filter);
+        }
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error('[MongoDB] Error pruning user contracts in MongoDB:', err);
+    return false;
+  }
+}
+
