@@ -243,15 +243,33 @@ export class LandingPage extends Component {
   componentDidMount() {
     window.addEventListener('keydown', this.handleKeyDown);
     try {
+      let refCode = '';
       const urlParams = new URLSearchParams(window.location.search);
-      const refCode = urlParams.get('ref');
+      if (urlParams.has('ref')) {
+        refCode = urlParams.get('ref') || '';
+      } else {
+        // Fallback: Check hash or full href in case router or messenger placed params after hash
+        const match = window.location.href.match(/[?&]ref=([^&#]+)/i);
+        if (match && match[1]) {
+          refCode = match[1];
+        }
+      }
+
       if (refCode) {
-        document.body.style.overflow = 'hidden';
-        this.setState({
-          regRefCode: refCode,
-          isAuthModalOpen: true,
-          authMode: 'register',
-        });
+        try {
+          refCode = decodeURIComponent(refCode.replace(/\+/g, ' ')).trim();
+        } catch (decErr) {
+          refCode = refCode.trim();
+        }
+
+        if (refCode) {
+          document.body.style.overflow = 'hidden';
+          this.setState({
+            regRefCode: refCode,
+            isAuthModalOpen: true,
+            authMode: 'register',
+          });
+        }
       }
     } catch (e) {
       console.error('Error parsing referral URL parameter:', e);

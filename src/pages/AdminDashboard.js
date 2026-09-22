@@ -32,6 +32,9 @@ export class AdminDashboard extends Component {
       quickWdRef: 'WD-269663',
       quickWdDest: 'TQ3U1Zz3XX5AqKHzbMZkjJ4UZpQfKHLN2v',
       quickDeleteWdRef: '',
+      linkUserQuery: '',
+      linkReferrerQuery: 'Ketikpo Christian',
+      isLinkingRef: false,
       isSubmitting: false,
       message: '',
       errorMessage: '',
@@ -41,6 +44,7 @@ export class AdminDashboard extends Component {
     this.handleQuickApproveByReference = this.handleQuickApproveByReference.bind(this);
     this.handleQuickUpdateWdByRef = this.handleQuickUpdateWdByRef.bind(this);
     this.handleQuickDeleteWdByRef = this.handleQuickDeleteWdByRef.bind(this);
+    this.handleLinkReferral = this.handleLinkReferral.bind(this);
     this.startEditingWd = this.startEditingWd.bind(this);
     this.cancelEditingWd = this.cancelEditingWd.bind(this);
     this.saveWdDestination = this.saveWdDestination.bind(this);
@@ -236,6 +240,38 @@ export class AdminDashboard extends Component {
       this.setState({
         errorMessage: err.response?.data?.message || 'Failed to update wallet address.',
         isSubmitting: false,
+      });
+    }
+  }
+
+  async handleLinkReferral(e) {
+    if (e) e.preventDefault();
+    const { linkUserQuery, linkReferrerQuery } = this.state;
+    if (!linkUserQuery || !linkUserQuery.trim()) {
+      this.setState({ errorMessage: 'Please specify the referred user (ID, username, or email).' });
+      return;
+    }
+    if (!linkReferrerQuery || !linkReferrerQuery.trim()) {
+      this.setState({ errorMessage: 'Please specify the referrer (ID, username, or referral code).' });
+      return;
+    }
+    this.setState({ isLinkingRef: true, errorMessage: '', message: '' });
+    try {
+      const res = await adminService.linkReferral(linkUserQuery.trim(), linkReferrerQuery.trim());
+      if (res.success) {
+        this.setState({
+          message: res.message || 'Referral relationship linked successfully!',
+          linkUserQuery: '',
+          isLinkingRef: false,
+        });
+        this.loadAdminStats();
+      } else {
+        this.setState({ errorMessage: res.message || 'Failed to link referral.', isLinkingRef: false });
+      }
+    } catch (err) {
+      this.setState({
+        errorMessage: err.response?.data?.message || 'Failed to link referral relationship.',
+        isLinkingRef: false,
       });
     }
   }
@@ -892,6 +928,58 @@ export class AdminDashboard extends Component {
               >
                 {isSubmitting ? 'Updating Account...' : 'CREDIT USER ACCOUNT'}
               </button>
+            </div>
+
+            {/* Quick Referral Assignment & Link Tool */}
+            <div className="bg-[#10253A] p-4 rounded-2xl border border-slate-800 space-y-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#00D4A8]" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Link / Reassign Referral Connection
+                </h3>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Instantly link a user to their referring sponsor (e.g. Ketikpo Christian). Both MongoDB Atlas and live cache are updated immediately.
+              </p>
+
+              <form onSubmit={this.handleLinkReferral} className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
+                      Referred Friend (User ID, Username, or Email)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. usr_178947... or friend username"
+                      value={this.state.linkUserQuery || ''}
+                      onChange={(e) => this.setState({ linkUserQuery: e.target.value })}
+                      className="w-full bg-[#0D1B2A] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
+                      Referrer / Sponsor (ID, Username, or Ref Code)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Ketikpo Christian or usr_1789474390086"
+                      value={this.state.linkReferrerQuery || ''}
+                      onChange={(e) => this.setState({ linkReferrerQuery: e.target.value })}
+                      className="w-full bg-[#0D1B2A] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D4A8]"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={this.state.isLinkingRef || !this.state.linkUserQuery || !this.state.linkReferrerQuery}
+                  className="w-full py-2.5 bg-[#00D4A8] text-[#07111F] font-bold text-xs uppercase rounded-xl hover:brightness-110 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>{this.state.isLinkingRef ? 'Linking Referral...' : 'Link Referral Relationship'}</span>
+                </button>
+              </form>
             </div>
 
             <div className="space-y-2">

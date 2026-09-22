@@ -212,6 +212,10 @@ export const adminService = {
     const res = await api.post('/admin/telegram/config', config);
     return res.data;
   },
+  linkReferral: async (userQuery, referrerQuery) => {
+    const res = await api.post('/admin/referrals/link', { userQuery, referrerQuery });
+    return res.data;
+  },
 };
 
 export const chatService = {

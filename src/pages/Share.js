@@ -38,10 +38,15 @@ export class Share extends Component {
     }
   }
 
-  handleCopyLink() {
+  getReferralLink() {
     const { teamData } = this.state;
-    const refCode = teamData ? teamData.referralCode : 'CMX-7892';
-    const link = `${window.location.origin}/?ref=${refCode}`;
+    const refCode = (teamData ? teamData.referralCode : 'CMX-7892') || 'CMX-7892';
+    // URL-encode parameter so spaces in usernames (e.g. "Ketikpo Christian") never break URLs when shared on WhatsApp, Telegram, or SMS
+    return `${window.location.origin}/?ref=${encodeURIComponent(refCode.trim())}`;
+  }
+
+  handleCopyLink() {
+    const link = this.getReferralLink();
     navigator.clipboard.writeText(link);
     this.setState({ copied: true });
     setTimeout(() => this.setState({ copied: false }), 2000);
@@ -49,8 +54,8 @@ export class Share extends Component {
 
   shareSocial(platform) {
     const { teamData } = this.state;
-    const refCode = teamData ? teamData.referralCode : 'CMX-7892';
-    const link = `${window.location.origin}/?ref=${refCode}`;
+    const refCode = (teamData ? teamData.referralCode : 'CMX-7892') || 'CMX-7892';
+    const link = this.getReferralLink();
     const text = encodeURIComponent(`Join CloudMineX Digital Mining Dashboard! Start digital cloud mining contracts with my referral code: ${refCode}`);
 
     let url = '';
@@ -65,8 +70,8 @@ export class Share extends Component {
     const { onNavigate } = this.props;
     const { teamData, copied } = this.state;
 
-    const refCode = teamData ? teamData.referralCode : 'CMX-7892';
-    const refLink = `${window.location.origin}/?ref=${refCode}`;
+    const refCode = (teamData ? teamData.referralCode : 'CMX-7892') || 'CMX-7892';
+    const refLink = this.getReferralLink();
 
     return (
       <div id="share-page" className="space-y-5 pb-10">

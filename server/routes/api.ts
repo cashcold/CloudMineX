@@ -7,6 +7,7 @@ import {
   DepositCloudMineX,
   WithdrawalCloudMineX,
   TransactionCloudMineX,
+  ReferralCloudMineX,
 } from '../config/dbStore';
 import { calculateEstimatedReward, processMiningYields, processMiningYieldsAsync } from '../services/rewardEngine';
 import { getCryptoRates, convertFiatToCrypto, getMarketTickers } from '../services/cryptoPriceService';
@@ -111,8 +112,35 @@ export const AFFILIATE_MILESTONES = [
 ];
 
 export const getFundedReferralsCount = (userId: string): number => {
-  const referredUsers = db.users.filter((u) => u.referredBy === userId);
-  const userRefs = db.referrals.filter((r) => r.referrerId === userId);
+  const referrer = db.users.find(
+    (u) =>
+      u.id === userId ||
+      u.username === userId ||
+      (u.referralCode && u.referralCode === userId)
+  );
+
+  const idSet = new Set<string>();
+  idSet.add(userId.toLowerCase());
+  if (referrer) {
+    idSet.add(referrer.id.toLowerCase());
+    if (referrer.username) idSet.add(referrer.username.toLowerCase());
+    if (referrer.referralCode) idSet.add(referrer.referralCode.toLowerCase());
+    const firstWord = (referrer.username || '').split(/[\s_\-+]+/g)[0].toLowerCase();
+    if (firstWord.length >= 3) idSet.add(firstWord);
+    const noSpace = (referrer.username || '').replace(/[\s_\-+]+/g, '').toLowerCase();
+    if (noSpace.length >= 3) idSet.add(noSpace);
+  }
+
+  const referredUsers = db.users.filter((u) => {
+    if (!u.referredBy) return false;
+    const refBy = u.referredBy.toLowerCase().trim();
+    return idSet.has(refBy) || idSet.has(refBy.replace(/[\s_\-+]+/g, ''));
+  });
+
+  const userRefs = db.referrals.filter((r) => {
+    const rId = (r.referrerId || '').toLowerCase().trim();
+    return idSet.has(rId);
+  });
   
   const allReferredIds = new Set<string>();
   referredUsers.forEach((u) => allReferredIds.add(u.id));
@@ -144,10 +172,34 @@ const isFirstConfirmedDeposit = (userId: string, currentDepositId: string) => {
   );
 };
 
-const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) => {
+const creditReferralBonus = async (user: UserCloudMineX, deposit: DepositCloudMineX) => {
   if (!user.referredBy) return;
 
-  const referrer = db.users.find((u) => u.id === user.referredBy);
+  let referrer = db.users.find(
+    (u) =>
+      u.id === user.referredBy ||
+      u.username === user.referredBy ||
+      u.referralCode === user.referredBy ||
+      (u.username && u.username.toLowerCase() === user.referredBy?.toLowerCase())
+  );
+
+  if (!referrer && isMongoConnected()) {
+    try {
+      const uDoc: any = await UserModel.findOne({
+        $or: [
+          { id: user.referredBy },
+          { username: user.referredBy },
+          { referralCode: user.referredBy },
+        ],
+      } as any).lean();
+      if (uDoc) {
+        referrer = uDoc;
+        const exists = db.users.some((u) => u.id === uDoc.id);
+        if (!exists) db.users.push(referrer);
+      }
+    } catch (e) {}
+  }
+
   if (!referrer) return;
 
   // STRICT REQUIREMENT: Only pay referral bonus on the first confirmed deposit of the referred user
@@ -166,13 +218,25 @@ const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) =
   referrer.totalRewards = Number(((referrer.totalRewards || 0) + bonusAmount).toFixed(2));
   referrer.updatedAt = new Date().toISOString();
 
-  const refRecord = db.referrals.find((r) => r.referredUserId === user.id);
+  let refRecord = db.referrals.find((r) => r.referredUserId === user.id);
   if (refRecord) {
     refRecord.reward = Number((refRecord.reward + bonusAmount).toFixed(2));
     refRecord.status = 'funded';
+  } else {
+    refRecord = {
+      id: `ref_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      referrerId: referrer.id,
+      referredUserId: user.id,
+      referredUsername: user.username,
+      referralCode: referrer.referralCode || referrer.username,
+      reward: bonusAmount,
+      status: 'funded',
+      createdAt: new Date().toISOString(),
+    };
+    db.referrals.push(refRecord);
   }
 
-  db.transactions.unshift({
+  const bonusTx: any = {
     id: `tx_ref_bonus_${Date.now()}`,
     userId: referrer.id,
     type: 'deposit',
@@ -182,11 +246,13 @@ const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) =
     description: `${(commRate * 100).toFixed(0)}% First Deposit Referral Commission from ${user.username}`,
     status: 'completed',
     createdAt: new Date().toISOString(),
-  });
+  };
+
+  db.transactions.unshift(bonusTx);
 
   if (isMongoConnected()) {
     try {
-      UserModel.updateOne(
+      await UserModel.updateOne(
         { id: referrer.id },
         {
           $set: {
@@ -196,7 +262,13 @@ const creditReferralBonus = (user: UserCloudMineX, deposit: DepositCloudMineX) =
             updatedAt: referrer.updatedAt,
           },
         }
-      ).catch((e) => console.error('[MongoDB] Referral commission sync error:', e));
+      );
+      await TransactionModel.create(bonusTx).catch(() => {});
+      await ReferralModel.updateOne(
+        { id: refRecord.id },
+        { $set: refRecord },
+        { upsert: true }
+      ).catch(() => {});
     } catch (e) {
       console.error('[MongoDB] Referrer update error:', e);
     }
@@ -254,7 +326,11 @@ export function findUserByQuery(rawQuery: string): UserCloudMineX | null {
 // Live asynchronous finder that prioritizes MongoDB Atlas as the single source of truth
 export async function findUserLive(rawQuery: string): Promise<UserCloudMineX | null> {
   if (!rawQuery) return null;
-  const clean = rawQuery.trim();
+  let clean = rawQuery.trim();
+  try {
+    clean = decodeURIComponent(clean.replace(/\+/g, ' ')).trim();
+  } catch (e) {}
+
   const lower = clean.toLowerCase();
   const digitsOnly = clean.replace(/\D/g, '');
 
@@ -263,7 +339,9 @@ export async function findUserLive(rawQuery: string): Promise<UserCloudMineX | n
     try {
       const safeEscaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const conditions: any[] = [
+        { id: clean },
         { username: new RegExp('^' + safeEscaped + '$', 'i') },
+        { referralCode: new RegExp('^' + safeEscaped + '$', 'i') },
         { email: new RegExp('^' + safeEscaped + '$', 'i') },
         { phone: clean },
       ];
@@ -310,10 +388,10 @@ export async function findUserLive(rawQuery: string): Promise<UserCloudMineX | n
         }
         return userObj;
       } else {
-        // If not found in MongoDB, it means the user was deleted in MongoDB directly!
-        // Remove from local memory cache so deletions in Mongo immediately take effect
+        // If not found in MongoDB, check memory cache
         const hadInCache = db.users.some(
           (u) =>
+            u.id === clean ||
             u.username.toLowerCase() === lower ||
             (u.email && u.email.toLowerCase() === lower) ||
             u.phone === clean
@@ -321,6 +399,7 @@ export async function findUserLive(rawQuery: string): Promise<UserCloudMineX | n
         if (hadInCache) {
           db.users = db.users.filter(
             (u) =>
+              u.id !== clean &&
               u.username.toLowerCase() !== lower &&
               (u.email ? u.email.toLowerCase() !== lower : true) &&
               u.phone !== clean
@@ -336,6 +415,111 @@ export async function findUserLive(rawQuery: string): Promise<UserCloudMineX | n
 
   // Fallback to local store if MongoDB is not reachable
   return findUserByQuery(rawQuery);
+}
+
+// Dedicated referrer finder supporting exact match, space stripping, %20 decoding, and truncation recovery
+export async function findReferrerLive(rawCode: string): Promise<UserCloudMineX | null> {
+  if (!rawCode || typeof rawCode !== 'string') return null;
+
+  let cleaned = rawCode.trim();
+  try {
+    cleaned = decodeURIComponent(cleaned.replace(/\+/g, ' ')).trim();
+  } catch (e) {}
+
+  if (!cleaned) return null;
+
+  const lower = cleaned.toLowerCase();
+  const noSpace = cleaned.replace(/[\s_\-+]+/g, '').toLowerCase();
+  const firstWord = cleaned.split(/[\s_\-+]+/g)[0].toLowerCase();
+
+  // 1. Direct MongoDB search
+  if (isMongoConnected()) {
+    try {
+      const safeEscaped = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const conditions: any[] = [
+        { id: cleaned },
+        { username: new RegExp('^' + safeEscaped + '$', 'i') },
+        { referralCode: new RegExp('^' + safeEscaped + '$', 'i') },
+        { email: new RegExp('^' + safeEscaped + '$', 'i') },
+        { phone: cleaned },
+      ];
+
+      // If code without spaces has >= 3 characters (e.g. "ketikpochristian")
+      if (noSpace.length >= 3 && noSpace !== lower) {
+        const noSpaceEscaped = noSpace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        conditions.push({ username: new RegExp('^' + noSpaceEscaped + '$', 'i') });
+        conditions.push({ referralCode: new RegExp('^' + noSpaceEscaped + '$', 'i') });
+      }
+
+      // If link was truncated at space in messaging apps (e.g. WhatsApp cut "Ketikpo Christian" to "Ketikpo")
+      if (firstWord.length >= 3) {
+        const firstWordEscaped = firstWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        conditions.push({ username: new RegExp('^' + firstWordEscaped + '(\\s|$)', 'i') });
+        conditions.push({ referralCode: new RegExp('^' + firstWordEscaped + '(\\s|$)', 'i') });
+      }
+
+      const docs: any[] = await UserModel.find({ $or: conditions } as any).lean();
+      if (docs && docs.length > 0) {
+        // Priority 1: Exact match on id, username, or referralCode
+        const exact = docs.find(
+          (u) =>
+            u.id === cleaned ||
+            u.username?.toLowerCase() === lower ||
+            u.referralCode?.toLowerCase() === lower
+        );
+        if (exact) return exact;
+
+        // Priority 2: Space-normalized match (e.g. "ketikpochristian" vs "Ketikpo Christian")
+        const matchNoSpace = docs.find(
+          (u) =>
+            (u.username || '').replace(/[\s_\-+]+/g, '').toLowerCase() === noSpace ||
+            (u.referralCode || '').replace(/[\s_\-+]+/g, '').toLowerCase() === noSpace
+        );
+        if (matchNoSpace) return matchNoSpace;
+
+        // Priority 3: First word prefix match (recovering from WhatsApp space truncation)
+        const matchFirstWord = docs.find(
+          (u) =>
+            (u.username || '').toLowerCase().startsWith(firstWord) ||
+            (u.referralCode || '').toLowerCase().startsWith(firstWord)
+        );
+        if (matchFirstWord) return matchFirstWord;
+
+        return docs[0];
+      }
+    } catch (err: any) {
+      console.warn('[MongoDB] findReferrerLive query error:', err.message);
+    }
+  }
+
+  // 2. Fallback to memory cache
+  const exactMem = db.users.find(
+    (u) =>
+      u.id === cleaned ||
+      u.username?.toLowerCase() === lower ||
+      u.referralCode?.toLowerCase() === lower ||
+      u.email?.toLowerCase() === lower ||
+      u.phone === cleaned
+  );
+  if (exactMem) return exactMem;
+
+  const noSpaceMem = db.users.find(
+    (u) =>
+      (u.username || '').replace(/[\s_\-+]+/g, '').toLowerCase() === noSpace ||
+      (u.referralCode || '').replace(/[\s_\-+]+/g, '').toLowerCase() === noSpace
+  );
+  if (noSpaceMem) return noSpaceMem;
+
+  if (firstWord.length >= 3) {
+    const firstWordMem = db.users.find(
+      (u) =>
+        (u.username || '').toLowerCase().startsWith(firstWord) ||
+        (u.referralCode || '').toLowerCase().startsWith(firstWord)
+    );
+    if (firstWordMem) return firstWordMem;
+  }
+
+  return null;
 }
 
 apiRouter.post('/auth/login', async (req: Request, res: Response) => {
@@ -402,18 +586,10 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
       });
     }
 
-    // Find referrer if referralCode provided (matching username or referralCode)
+    // Find referrer if referralCode provided (matching username, referralCode, space-stripped, or first name)
     let referrer = null;
     if (referralCode && typeof referralCode === 'string' && referralCode.trim()) {
-      const codeTrimmed = referralCode.trim().toLowerCase();
-      referrer = await findUserLive(codeTrimmed);
-      if (!referrer) {
-        referrer = db.users.find(
-          (u) =>
-            (u.username && u.username.toLowerCase() === codeTrimmed) ||
-            (u.referralCode && u.referralCode.toLowerCase() === codeTrimmed)
-        );
-      }
+      referrer = await findReferrerLive(referralCode);
     }
 
     const newUser: UserCloudMineX = {
@@ -442,15 +618,26 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
 
     // Link in db.referrals if referrer exists
     if (referrer) {
-      db.referrals.push({
+      const refRecord: ReferralCloudMineX = {
         id: `ref_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         referrerId: referrer.id,
         referredUserId: newUser.id,
         referredUsername: newUser.username,
+        referralCode: referrer.referralCode || referrer.username,
         createdAt: new Date().toISOString(),
         reward: 0, // Rewarded upon deposit
         status: 'pending', // Pending deposit
-      });
+      };
+      db.referrals.push(refRecord);
+
+      if (isMongoConnected()) {
+        try {
+          await ReferralModel.create(refRecord);
+          console.log(`[MongoDB] Created Referral record for referrer "${referrer.username}" -> "${newUser.username}"`);
+        } catch (rErr: any) {
+          console.warn('[MongoDB] Referral save note:', rErr.message);
+        }
+      }
     }
 
     // Record Welcome Bonus Transaction
@@ -1940,26 +2127,157 @@ apiRouter.get('/income/:userId', async (req: Request, res: Response) => {
 // ================= REFERRALS & TEAM =================
 apiRouter.get('/referrals/:userId', async (req: Request, res: Response) => {
   const userId = req.params.userId;
+  await ensureMongoConnected();
   if (isMongoConnected()) {
     try {
       await db.syncFromMongo();
     } catch (e) {}
   }
-  let user = db.users.find((u) => u.id === userId);
+
+  let user = db.users.find((u) => u.id === userId || u.username === userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc: any = await UserModel.findOne({
+        $or: [{ id: userId }, { username: userId }, { referralCode: userId }],
+      } as any).lean();
+      if (uDoc) {
+        user = uDoc;
+        const exists = db.users.some((u) => u.id === uDoc.id);
+        if (!exists) db.users.push(user);
+      }
+    } catch (e) {}
+  }
+
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-  // Get all users referred by this user
-  const referredUsers = db.users.filter((u) => u.referredBy === userId);
-  const userRefs = db.referrals.filter((r) => r.referrerId === userId);
+  // 1. Gather all referrer identifier variations (id, username, referralCode, space-stripped, first-name)
+  const idSet = new Set<string>();
+  idSet.add(user.id.toLowerCase());
+  if (user.username) idSet.add(user.username.toLowerCase());
+  if (user.referralCode) idSet.add(user.referralCode.toLowerCase());
+  const firstWord = (user.username || '').split(/[\s_\-+]+/g)[0].toLowerCase();
+  if (firstWord.length >= 3) idSet.add(firstWord);
+  const noSpace = (user.username || '').replace(/[\s_\-+]+/g, '').toLowerCase();
+  if (noSpace.length >= 3) idSet.add(noSpace);
 
-  const totalInvited = Math.max(referredUsers.length, userRefs.length);
+  // 2. Query MongoDB Atlas directly for any referred user documents
+  const mongoUsersFound: any[] = [];
+  if (isMongoConnected()) {
+    try {
+      const safeUsername = (user.username || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safeCode = (user.referralCode || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safeFirst = firstWord ? firstWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+
+      const refConditions: any[] = [
+        { referredBy: user.id },
+        { referredBy: user.username },
+      ];
+      if (user.referralCode) {
+        refConditions.push({ referredBy: user.referralCode });
+      }
+      if (safeUsername) {
+        refConditions.push({ referredBy: new RegExp('^' + safeUsername + '$', 'i') });
+      }
+      if (safeCode) {
+        refConditions.push({ referredBy: new RegExp('^' + safeCode + '$', 'i') });
+      }
+      if (noSpace && noSpace.length >= 3) {
+        refConditions.push({ referredBy: new RegExp('^' + noSpace + '$', 'i') });
+      }
+      if (firstWord && firstWord.length >= 3) {
+        refConditions.push({ referredBy: new RegExp('^' + safeFirst + '(\\s|$)', 'i') });
+      }
+
+      const mReferred = await UserModel.find({ $or: refConditions } as any).lean();
+      if (mReferred && mReferred.length > 0) {
+        mongoUsersFound.push(...mReferred);
+      }
+
+      // Also search ReferralModel
+      const mRefs = await ReferralModel.find({
+        $or: [
+          { referrerId: user.id },
+          { referrerId: user.username },
+          { referralCode: user.username },
+          ...(user.referralCode ? [{ referralCode: user.referralCode }] : []),
+          ...(firstWord && firstWord.length >= 3 ? [{ referralCode: new RegExp('^' + safeFirst + '(\\s|$)', 'i') }] : [])
+        ],
+      } as any).lean();
+
+      for (const r of mRefs) {
+        const refereeId = r.referredUserId || (r as any).refereeId;
+        if (refereeId && !mongoUsersFound.some((u) => u.id === refereeId)) {
+          const refereeUser = await UserModel.findOne({ id: refereeId } as any).lean();
+          if (refereeUser) {
+            mongoUsersFound.push(refereeUser);
+          } else {
+            mongoUsersFound.push({
+              id: refereeId,
+              username: r.referredUsername || 'Miner',
+              createdAt: r.createdAt || new Date().toISOString(),
+              totalDeposits: 0,
+              balance: 0,
+              referredBy: user.id,
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[MongoDB] Direct referred users query error:', err.message);
+    }
+  }
+
+  // 3. Filter memory cache
+  const localReferred = db.users.filter((u) => {
+    if (!u.referredBy) return false;
+    const refBy = u.referredBy.toLowerCase().trim();
+    return (
+      idSet.has(refBy) ||
+      idSet.has(refBy.replace(/[\s_\-+%20]+/g, '')) ||
+      (firstWord.length >= 3 && refBy.startsWith(firstWord + ' '))
+    );
+  });
+
+  const matchingDbRefs = db.referrals.filter((r) => {
+    const rId = (r.referrerId || '').toLowerCase().trim();
+    const rCode = (r.referralCode || '').toLowerCase().trim();
+    return idSet.has(rId) || idSet.has(rCode);
+  });
+
+  // 4. Merge all unique referred members by user ID
+  const combinedMembersMap = new Map<string, any>();
+  for (const u of localReferred) {
+    combinedMembersMap.set(u.id, u);
+  }
+  for (const u of mongoUsersFound) {
+    if (!combinedMembersMap.has(u.id)) {
+      combinedMembersMap.set(u.id, u);
+    }
+  }
+  for (const r of matchingDbRefs) {
+    const refId = r.referredUserId;
+    if (refId && !combinedMembersMap.has(refId)) {
+      const uObj = db.users.find((u) => u.id === refId);
+      if (uObj) {
+        combinedMembersMap.set(refId, uObj);
+      } else {
+        combinedMembersMap.set(refId, {
+          id: refId,
+          username: r.referredUsername || 'Miner',
+          createdAt: r.createdAt,
+          totalDeposits: 0,
+        });
+      }
+    }
+  }
+
+  const allReferredList = Array.from(combinedMembersMap.values());
+  const totalInvited = allReferredList.length;
 
   // STRICT RULE: Count only funded referrals (referred users who have made at least 1 confirmed deposit)
   let fundedCount = 0;
-  const enrichedTeamMembers = (referredUsers.length > 0 ? referredUsers : userRefs).map((m: any) => {
-    const referredUserObj = db.users.find(
-      (u) => u.id === (m.id || m.referredUserId) || u.username === (m.username || m.referredUsername)
-    );
+  const enrichedTeamMembers = allReferredList.map((m: any) => {
+    const referredUserObj = db.users.find((u) => u.id === m.id || u.username === m.username) || m;
     const userDeposits = db.deposits.filter(
       (d) => d.userId === (referredUserObj ? referredUserObj.id : '') && d.status === 'confirmed'
     );
@@ -1967,11 +2285,16 @@ apiRouter.get('/referrals/:userId', async (req: Request, res: Response) => {
     const isFunded =
       (referredUserObj && (referredUserObj.totalDeposits || 0) > 0) ||
       userDeposits.length > 0 ||
+      depositTotal > 0 ||
       m.status === 'funded';
 
     if (isFunded) {
       fundedCount++;
     }
+
+    const matchedRef = db.referrals.find(
+      (r) => r.referredUserId === m.id || (r.referrerId === user.id && r.referredUsername === m.username)
+    );
 
     return {
       id: m.id || `ref_${m.referredUserId || Date.now()}`,
@@ -1980,10 +2303,19 @@ apiRouter.get('/referrals/:userId', async (req: Request, res: Response) => {
       createdAt: m.createdAt || new Date().toISOString(),
       isFunded,
       totalDeposits: depositTotal || (referredUserObj ? (referredUserObj.totalDeposits || 0) : 0),
-      reward: m.reward || 0,
+      reward: matchedRef ? (matchedRef.reward || 0) : (m.reward || 0),
       status: isFunded ? 'funded' : 'pending_deposit',
     };
   });
+
+  // Auto-heal referredBy in MongoDB so it is permanently canonicalized to user.id
+  if (isMongoConnected()) {
+    for (const m of allReferredList) {
+      if (m.referredBy && m.referredBy !== user.id) {
+        UserModel.updateOne({ id: m.id }, { $set: { referredBy: user.id } }).catch(() => {});
+      }
+    }
+  }
 
   // Pull claimed milestones from user and MongoDB
   let claimedList = Array.isArray(user.claimedMilestones) ? [...user.claimedMilestones] : [];
@@ -2185,6 +2517,66 @@ apiRouter.post('/referrals/claim-milestone', async (req: Request, res: Response)
 // ================= SETTINGS =================
 apiRouter.get('/settings', (req: Request, res: Response) => {
   res.json({ success: true, settings: db.settings });
+});
+
+// Admin: Link a referred user to a referrer
+apiRouter.post('/admin/referrals/link', async (req: Request, res: Response) => {
+  const { userQuery, referrerQuery } = req.body;
+  if (!userQuery || !referrerQuery) {
+    return res.status(400).json({ success: false, message: 'Both userQuery and referrerQuery are required.' });
+  }
+
+  await ensureMongoConnected();
+  const targetUser = await findUserLive(userQuery);
+  if (!targetUser) {
+    return res.status(404).json({ success: false, message: `Referred user "${userQuery}" not found.` });
+  }
+
+  const referrer = await findReferrerLive(referrerQuery);
+  if (!referrer) {
+    return res.status(404).json({ success: false, message: `Referrer "${referrerQuery}" not found.` });
+  }
+
+  if (targetUser.id === referrer.id) {
+    return res.status(400).json({ success: false, message: 'A user cannot refer themselves.' });
+  }
+
+  // Link in memory
+  targetUser.referredBy = referrer.id;
+  const localTarget = db.users.find((u) => u.id === targetUser.id);
+  if (localTarget) localTarget.referredBy = referrer.id;
+
+  const refRecord: ReferralCloudMineX = {
+    id: `ref_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    referrerId: referrer.id,
+    referredUserId: targetUser.id,
+    referredUsername: targetUser.username,
+    referralCode: referrer.referralCode || referrer.username,
+    reward: 0,
+    status: (targetUser.totalDeposits || 0) > 0 ? 'funded' : 'pending',
+    createdAt: new Date().toISOString(),
+  };
+
+  db.referrals.push(refRecord);
+
+  // Link in MongoDB
+  if (isMongoConnected()) {
+    try {
+      await UserModel.updateOne({ id: targetUser.id }, { $set: { referredBy: referrer.id } });
+      await ReferralModel.create(refRecord);
+    } catch (e: any) {
+      console.warn('[MongoDB] Admin link referral error:', e.message);
+    }
+  }
+
+  db.saveData();
+
+  return res.json({
+    success: true,
+    message: `Successfully linked "${targetUser.username}" to referrer "${referrer.username}" (${referrer.id}).`,
+    referredUser: targetUser.username,
+    referrer: referrer.username,
+  });
 });
 
 // ================= ADMIN DASHBOARD API =================

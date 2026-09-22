@@ -66,10 +66,14 @@ export class Team extends Component {
     }
   }
 
-  handleCopyLink() {
+  getReferralLink() {
     const { teamData } = this.state;
-    const refCode = teamData ? teamData.referralCode : 'CMX-7892';
-    const link = `${window.location.origin}/?ref=${refCode}`;
+    const refCode = (teamData ? teamData.referralCode : 'CMX-7892') || 'CMX-7892';
+    return `${window.location.origin}/?ref=${encodeURIComponent(refCode.trim())}`;
+  }
+
+  handleCopyLink() {
+    const link = this.getReferralLink();
     navigator.clipboard.writeText(link);
     this.setState({ copied: true });
     setTimeout(() => this.setState({ copied: false }), 2000);
@@ -126,8 +130,8 @@ export class Team extends Component {
       selectedRoadmapIndex,
     } = this.state;
 
-    const refCode = teamData ? teamData.referralCode : 'CMX-7892';
-    const refLink = `${window.location.origin}/?ref=${refCode}`;
+    const refCode = (teamData ? teamData.referralCode : 'CMX-7892') || 'CMX-7892';
+    const refLink = this.getReferralLink();
     const fundedCount = teamData ? (teamData.fundedReferralsCount || 0) : 0;
     const totalInvited = teamData ? (teamData.totalInvited || 0) : 0;
     const unlockedCount = teamData ? (teamData.unlockedCount || 0) : 0;
