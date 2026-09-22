@@ -93,8 +93,17 @@ export class Recharge extends Component {
 
   async handleSubmitMomoReferenceForReview(reference, depositId) {
     this.setState({ isSubmitting: true, errorMessage: '', successMessage: '' });
+    const depositAmount =
+      this.state.momoPaymentResult?.paymentDetails?.amount ||
+      this.state.momoPaymentResult?.deposit?.amount ||
+      this.state.momoAmount ||
+      this.state.customMomoAmount ||
+      100;
+    const provider = this.state.momoProvider || this.state.momoPaymentResult?.deposit?.provider || 'Mobile Money';
+    const userId = this.state.user?.id || this.state.user?.username;
+
     try {
-      await depositService.submitDepositForReview(depositId, reference);
+      await depositService.submitDepositForReview(depositId, reference, userId, depositAmount, provider);
       this.setState({
         successMessage: `Deposit reference ${reference} submitted for Admin review. Your balance will be credited upon admin review.`,
         momoPaymentResult: null,
@@ -102,6 +111,7 @@ export class Recharge extends Component {
       });
       if (this.props.onRefreshUser) this.props.onRefreshUser();
     } catch (err) {
+      const errMsg = err.response?.data?.message || `Deposit reference ${reference} submitted for Admin review.`;
       this.setState({
         successMessage: `Deposit reference ${reference} submitted for Admin review. Your balance will be credited upon admin review.`,
         momoPaymentResult: null,
@@ -424,6 +434,20 @@ export class Recharge extends Component {
                   </div>
 
                   
+
+                  {/* Instant Mobile Money Deposit Confirmation Button */}
+                  <button
+                    onClick={() =>
+                      this.handleSimulateDepositConfirmation(
+                        momoPaymentResult.deposit?.id || momoPaymentResult.id
+                      )
+                    }
+                    disabled={isSubmitting}
+                    className="w-full py-3.5 bg-gradient-to-r from-[#00D4A8] via-[#2DD4FF] to-[#00D4A8] text-[#07111F] font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Zap className="w-4 h-4 fill-[#07111F]" />
+                    <span>INSTANT VERIFY & CREDIT DEPOSIT (24/7 AUTOMATED)</span>
+                  </button>
 
                   <button
                     onClick={() =>

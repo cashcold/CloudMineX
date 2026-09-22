@@ -31,6 +31,9 @@ import {
   AppSettingsModel,
   isMongoConnected,
   ensureMongoConnected,
+  getUnifiedMongoDeposits,
+  saveDepositToMongo,
+  deleteDepositFromMongo,
   getUnifiedMongoWithdrawals,
   getUnifiedMongoContracts,
 } from '../config/dbMongo';
@@ -1121,13 +1124,21 @@ apiRouter.post('/deposits/mobile-money', async (req: Request, res: Response) => 
   };
 
   db.deposits.unshift(deposit);
+  await saveDepositToMongo(deposit);
   await db.saveData();
 
   // Instant Alert: Send Telegram Notification to Admin Phone
-  const user = db.users.find((u) => u.id === userId);
+  let user = db.users.find((u) => u.id === userId || u.username === userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc: any = await (UserModel as any).findOne({ $or: [{ id: userId }, { username: userId }] }).lean();
+      if (uDoc) user = uDoc;
+    } catch (e) {}
+  }
+
   sendDepositNotification({
     username: user?.username || user?.email || 'CloudMineX User',
-    userId: user?.id,
+    userId: user?.id || userId,
     userEmail: user?.email,
     amount: result.amount,
     currency: 'GHS',
@@ -1189,13 +1200,21 @@ apiRouter.post('/deposits/crypto', async (req: Request, res: Response) => {
   };
 
   db.deposits.unshift(deposit);
+  await saveDepositToMongo(deposit);
   await db.saveData();
 
   // Instant Alert: Send Telegram Notification to Admin Phone
-  const user = db.users.find((u) => u.id === userId);
+  let user = db.users.find((u) => u.id === userId || u.username === userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc: any = await (UserModel as any).findOne({ $or: [{ id: userId }, { username: userId }] }).lean();
+      if (uDoc) user = uDoc;
+    } catch (e) {}
+  }
+
   sendDepositNotification({
     username: user?.username || user?.email || 'CloudMineX User',
-    userId: user?.id,
+    userId: user?.id || userId,
     userEmail: user?.email,
     amount: result.amount,
     currency: curr,
@@ -1217,29 +1236,91 @@ apiRouter.post('/deposits/crypto', async (req: Request, res: Response) => {
 });
 
 apiRouter.post('/deposits/submit-review', async (req: Request, res: Response) => {
-  const { depositId, reference } = req.body;
-  try {
-    await db.syncFromMongo();
-  } catch (e) {}
+  const { depositId, reference, userId: bodyUserId, username: bodyUsername, amount: bodyAmount, provider: bodyProvider, currency: bodyCurrency } = req.body;
+  await ensureMongoConnected();
 
+  const trimmedRef = reference ? reference.trim() : '';
+
+  // 1. Look for existing deposit in memory or MongoDB
   let deposit = db.deposits.find(
-    (d) => (depositId && d.id === depositId) || (reference && d.reference?.trim().toLowerCase() === reference.trim().toLowerCase())
+    (d) => (depositId && d.id === depositId) || (trimmedRef && d.reference && d.reference.toLowerCase() === trimmedRef.toLowerCase())
   );
+
+  if (!deposit && isMongoConnected()) {
+    try {
+      const mongoDep: any = await DepositModel.findOne({
+        $or: [
+          ...(depositId ? [{ id: depositId }] : []),
+          ...(trimmedRef ? [{ reference: trimmedRef }, { reference: new RegExp(`^${trimmedRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }] : []),
+        ],
+      } as any).lean();
+      if (mongoDep) {
+        deposit = { ...mongoDep };
+      }
+    } catch (e) {}
+  }
+
+  // 2. Identify target user
+  let targetUser = null;
+  const userLookup = bodyUserId || bodyUsername;
+  if (userLookup) {
+    targetUser = db.users.find((u) => u.id === userLookup || u.username?.toLowerCase() === userLookup.toLowerCase());
+    if (!targetUser && isMongoConnected()) {
+      try {
+        const uDoc: any = await UserModel.findOne({
+          $or: [
+            { id: userLookup },
+            { username: userLookup },
+            { username: new RegExp(`^${userLookup.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+          ],
+        } as any).lean();
+        if (uDoc) targetUser = uDoc;
+      } catch (e) {}
+    }
+  }
+
+  if (!targetUser && deposit?.userId) {
+    targetUser = db.users.find((u) => u.id === deposit!.userId);
+    if (!targetUser && isMongoConnected()) {
+      try {
+        const uDoc: any = await (UserModel as any).findOne({ id: deposit!.userId }).lean();
+        if (uDoc) targetUser = uDoc;
+      } catch (e) {}
+    }
+  }
+
+  if (!targetUser && db.users.length > 0) {
+    targetUser = db.users[0];
+  }
 
   if (deposit) {
     deposit.status = 'pending';
     deposit.updatedAt = new Date().toISOString();
-  } else if (reference) {
-    const fallbackUser = db.users[0];
+    if (trimmedRef) deposit.reference = trimmedRef;
+    if (bodyAmount && Number(bodyAmount) > 0) deposit.amount = Number(bodyAmount);
+    if (targetUser && (!deposit.userId || deposit.userId === 'usr_default')) {
+      deposit.userId = targetUser.id;
+    }
+    // Update in-memory db.deposits
+    const memIdx = db.deposits.findIndex((d) => d.id === deposit!.id);
+    if (memIdx !== -1) {
+      db.deposits[memIdx] = deposit;
+    } else {
+      db.deposits.unshift(deposit);
+    }
+  } else if (trimmedRef) {
+    const depositAmount = Number(bodyAmount) || 100;
     deposit = {
-      id: `dep_${Date.now()}`,
-      userId: fallbackUser ? fallbackUser.id : 'usr_default',
-      type: 'mobile_money',
-      provider: 'Mobile Money',
-      currency: 'GHS',
-      amount: 100,
-      reference: reference.trim(),
+      id: depositId || `dep_${Date.now()}`,
+      userId: targetUser ? targetUser.id : (bodyUserId || 'usr_default'),
+      type: bodyProvider?.toLowerCase().includes('crypto') ? 'crypto' : 'mobile_money',
+      provider: bodyProvider || 'Mobile Money',
+      currency: bodyCurrency || 'GHS',
+      amount: depositAmount,
+      reference: trimmedRef,
       status: 'pending',
+      confirmations: 0,
+      requiredConfirmations: 3,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1247,18 +1328,19 @@ apiRouter.post('/deposits/submit-review', async (req: Request, res: Response) =>
   }
 
   if (deposit) {
+    // Persist immediately to MongoDB and local store
+    await saveDepositToMongo(deposit);
     await db.saveData();
 
     // Instant Alert: Notify Admin of Deposit Reference Submission
-    const targetUser = db.users.find((u) => u.id === deposit!.userId);
     sendDepositNotification({
       username: targetUser?.username || targetUser?.email || 'CloudMineX User',
-      userId: targetUser?.id,
+      userId: targetUser?.id || deposit.userId,
       userEmail: targetUser?.email,
       amount: deposit.amount,
       currency: deposit.currency || 'GHS',
       method: `${deposit.provider || 'Mobile Money'} (Review Submitted)`,
-      reference: reference || deposit.reference,
+      reference: trimmedRef || deposit.reference,
       status: 'pending',
       createdAt: deposit.updatedAt || deposit.createdAt,
     }).catch((err) => {
@@ -1267,7 +1349,7 @@ apiRouter.post('/deposits/submit-review', async (req: Request, res: Response) =>
 
     return res.json({
       success: true,
-      message: `Deposit reference ${reference || deposit.reference} submitted for Admin review!`,
+      message: `Deposit reference ${trimmedRef || deposit.reference} submitted for Admin review! Your balance will be credited upon review.`,
       deposit,
     });
   }
@@ -1287,13 +1369,13 @@ apiRouter.get('/deposits/:userId', async (req: Request, res: Response) => {
       ],
     } as any).lean();
     const actualUserId = userDoc ? userDoc.id : userId;
-    const deposits = await DepositModel.find({
-      $or: [
-        { userId: actualUserId },
-        ...(userDoc?.username ? [{ userId: userDoc.username }] : []),
-      ],
-    } as any).sort({ createdAt: -1 }).lean();
-    return res.json({ success: true, deposits });
+    const allDeposits = await getUnifiedMongoDeposits();
+    const userDeposits = allDeposits.filter((d) =>
+      d.userId === actualUserId ||
+      d.userId === userId ||
+      (userDoc?.username && d.userId?.toLowerCase() === userDoc.username.toLowerCase())
+    );
+    return res.json({ success: true, deposits: userDeposits });
   }
   const userDeposits = db.deposits.filter((d) => d.userId === userId);
   res.json({ success: true, deposits: userDeposits });
@@ -1301,7 +1383,22 @@ apiRouter.get('/deposits/:userId', async (req: Request, res: Response) => {
 
 // Demo mode action: Simulate Deposit Confirmation
 apiRouter.post('/deposits/:id/confirm-demo', async (req: Request, res: Response) => {
-  const deposit = db.deposits.find((d) => d.id === req.params.id);
+  await ensureMongoConnected();
+  const targetId = req.params.id;
+
+  let deposit = db.deposits.find((d) => d.id === targetId || d.reference === targetId);
+  if (!deposit && isMongoConnected()) {
+    try {
+      const dDoc: any = await (DepositModel as any).findOne({
+        $or: [{ id: targetId }, { reference: targetId }],
+      }).lean();
+      if (dDoc) {
+        deposit = { ...dDoc };
+        db.deposits.unshift(deposit);
+      }
+    } catch (e) {}
+  }
+
   if (!deposit) return res.status(404).json({ success: false, message: 'Deposit not found' });
 
   if (deposit.status === 'confirmed') {
@@ -1313,28 +1410,52 @@ apiRouter.post('/deposits/:id/confirm-demo', async (req: Request, res: Response)
   deposit.updatedAt = new Date().toISOString();
 
   // Credit user balance
-  const user = db.users.find((u) => u.id === deposit.userId);
+  let user = db.users.find((u) => u.id === deposit!.userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc: any = await (UserModel as any).findOne({ id: deposit!.userId }).lean();
+      if (uDoc) {
+        user = { ...uDoc };
+        db.users.push(user);
+      }
+    } catch (e) {}
+  }
+
   if (user) {
     user.balance = Number((user.balance + deposit.amount).toFixed(2));
     user.totalDeposits = Number(((user.totalDeposits || 0) + deposit.amount).toFixed(2));
     user.updatedAt = new Date().toISOString();
 
     // Record Deposit Transaction
-    db.transactions.unshift({
+    const newTx: any = {
       id: `tx_dep_${Date.now()}`,
       userId: user.id,
       type: 'deposit',
       amount: deposit.amount,
-      currency: 'GHS',
+      currency: deposit.currency || 'GHS',
       reference: deposit.reference,
       description: `Deposit via ${deposit.provider}`,
       status: 'completed',
       createdAt: new Date().toISOString(),
-    });
+    };
+    db.transactions.unshift(newTx);
+
+    if (isMongoConnected()) {
+      try {
+        await UserModel.updateOne(
+          { id: user.id },
+          { $set: { balance: user.balance, totalDeposits: user.totalDeposits, updatedAt: user.updatedAt } }
+        );
+        await TransactionModel.create(newTx);
+      } catch (err: any) {
+        console.warn('[MongoDB] Deposit confirm user update error:', err.message);
+      }
+    }
 
     creditReferralBonus(user, deposit);
   }
 
+  await saveDepositToMongo(deposit);
   await db.saveData();
 
   // Instant Alert: Notify Admin of Confirmed Deposit
@@ -1408,9 +1529,32 @@ const handleDeposit = async (req: Request, res: Response) => {
       status: 'completed',
       createdAt: deposit.createdAt,
     });
+
+    if (isMongoConnected()) {
+      try {
+        await UserModel.updateOne(
+          { id: user.id },
+          { $set: { balance: user.balance, totalDeposits: user.totalDeposits, updatedAt: user.updatedAt } }
+        );
+        await TransactionModel.create({
+          id: `tx_dep_${Date.now()}`,
+          userId: user.id,
+          type: 'deposit',
+          amount: numAmount,
+          currency: deposit.currency,
+          reference,
+          description: `Deposit via ${provider}`,
+          status: 'completed',
+          createdAt: deposit.createdAt,
+        });
+      } catch (err: any) {
+        console.warn('[MongoDB] Handle deposit user sync error:', err.message);
+      }
+    }
   }
 
   db.deposits.unshift(deposit);
+  await saveDepositToMongo(deposit);
   await db.saveData();
 
   // Instant Alert: Send Telegram Notification
@@ -2050,8 +2194,8 @@ apiRouter.get('/admin/stats', async (req: Request, res: Response) => {
     const [users, plans, deposits, withdrawals, contracts, settingsDoc] = await Promise.all([
       UserModel.find().lean(),
       MiningPlanModel.find().lean(),
-      DepositModel.find().sort({ createdAt: -1 }).lean(),
-      WithdrawalModel.find().sort({ createdAt: -1 }).lean(),
+      getUnifiedMongoDeposits(),
+      getUnifiedMongoWithdrawals(),
       MiningContractModel.find({ status: 'active' } as any).lean(),
       AppSettingsModel.findOne().lean(),
     ]);
@@ -2243,12 +2387,21 @@ apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Re
     return res.status(400).json({ success: false, message: 'Reference is required.' });
   }
 
-  try {
-    await db.syncFromMongo();
-  } catch (err) {}
-
+  await ensureMongoConnected();
   const trimmedRef = reference.trim();
   let deposit = db.deposits.find((d) => d.reference && d.reference.toLowerCase() === trimmedRef.toLowerCase());
+
+  if (!deposit && isMongoConnected()) {
+    try {
+      const dDoc: any = await (DepositModel as any).findOne({
+        $or: [{ reference: trimmedRef }, { reference: new RegExp(`^${trimmedRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }],
+      }).lean();
+      if (dDoc) {
+        deposit = { ...dDoc };
+        db.deposits.unshift(deposit);
+      }
+    } catch (e) {}
+  }
 
   if (deposit) {
     if (deposit.status === 'confirmed') {
@@ -2258,13 +2411,20 @@ apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Re
     deposit.confirmations = deposit.requiredConfirmations || 3;
     deposit.updatedAt = new Date().toISOString();
 
-    const targetUser = db.users.find((u) => u.id === deposit!.userId);
+    let targetUser: any = db.users.find((u) => u.id === deposit!.userId);
+    if (!targetUser && isMongoConnected()) {
+      try {
+        const uDoc: any = await (UserModel as any).findOne({ id: deposit!.userId }).lean();
+        if (uDoc) targetUser = uDoc;
+      } catch (e) {}
+    }
+
     if (targetUser) {
       targetUser.balance = Number((targetUser.balance + deposit.amount).toFixed(2));
       targetUser.totalDeposits = Number(((targetUser.totalDeposits || 0) + deposit.amount).toFixed(2));
       targetUser.updatedAt = new Date().toISOString();
 
-      db.transactions.unshift({
+      const newTx: any = {
         id: `tx_dep_${Date.now()}`,
         userId: targetUser.id,
         type: 'deposit',
@@ -2274,11 +2434,27 @@ apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Re
         description: `Admin Verified Deposit: ${deposit.reference}`,
         status: 'completed',
         createdAt: new Date().toISOString(),
-      });
+      };
+      db.transactions.unshift(newTx);
+
+      if (isMongoConnected()) {
+        try {
+          await UserModel.updateOne(
+            { id: targetUser.id },
+            { $set: { balance: targetUser.balance, totalDeposits: targetUser.totalDeposits, updatedAt: targetUser.updatedAt } }
+          );
+          await TransactionModel.create(newTx);
+        } catch (err: any) {
+          console.warn('[MongoDB] Admin approve reference sync error:', err.message);
+        }
+      }
+
       creditReferralBonus(targetUser, deposit);
     }
 
+    await saveDepositToMongo(deposit);
     await db.saveData();
+
     return res.json({
       success: true,
       message: `Deposit reference ${trimmedRef} approved and credited successfully!`,
@@ -2288,12 +2464,23 @@ apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Re
   }
 
   // If deposit record was not found (e.g. earlier unpersisted instance), create and credit it now!
-  let targetUser = null;
+  let targetUser: any = null;
   if (userId) {
     targetUser = db.users.find((u) => u.id === userId);
   }
   if (!targetUser && username) {
     targetUser = db.users.find((u) => u.username?.toLowerCase() === username.trim().toLowerCase());
+  }
+  if (!targetUser && isMongoConnected()) {
+    try {
+      const uDoc: any = await UserModel.findOne({
+        $or: [
+          ...(userId ? [{ id: userId }, { username: userId }] : []),
+          ...(username ? [{ username }, { username: new RegExp(`^${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }] : []),
+        ],
+      } as any).lean();
+      if (uDoc) targetUser = uDoc;
+    } catch (e) {}
   }
   if (!targetUser && db.users.length > 0) {
     targetUser = db.users[0];
@@ -2327,7 +2514,7 @@ apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Re
   targetUser.totalDeposits = Number(((targetUser.totalDeposits || 0) + depositAmount).toFixed(2));
   targetUser.updatedAt = new Date().toISOString();
 
-  db.transactions.unshift({
+  const newTx: any = {
     id: `tx_dep_${Date.now()}`,
     userId: targetUser.id,
     type: 'deposit',
@@ -2337,9 +2524,23 @@ apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Re
     description: note || `Admin Verified Deposit: ${trimmedRef}`,
     status: 'completed',
     createdAt: new Date().toISOString(),
-  });
+  };
+  db.transactions.unshift(newTx);
+
+  if (isMongoConnected()) {
+    try {
+      await UserModel.updateOne(
+        { id: targetUser.id },
+        { $set: { balance: targetUser.balance, totalDeposits: targetUser.totalDeposits, updatedAt: targetUser.updatedAt } }
+      );
+      await TransactionModel.create(newTx);
+    } catch (err: any) {
+      console.warn('[MongoDB] Admin create & credit reference sync error:', err.message);
+    }
+  }
 
   creditReferralBonus(targetUser, newDeposit);
+  await saveDepositToMongo(newDeposit);
   await db.saveData();
 
   // Instant Alert: Send Telegram Notification for Admin Approved Deposit
@@ -2368,11 +2569,22 @@ apiRouter.post('/admin/deposits/reference/approve', async (req: Request, res: Re
 
 // Admin: Approve Deposit and Credit User Account
 apiRouter.post('/admin/deposits/:id/approve', async (req: Request, res: Response) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {}
+  await ensureMongoConnected();
+  const targetId = req.params.id;
 
-  const deposit = db.deposits.find((d) => d.id === req.params.id);
+  let deposit = db.deposits.find((d) => d.id === targetId || d.reference === targetId);
+  if (!deposit && isMongoConnected()) {
+    try {
+      const dDoc: any = await (DepositModel as any).findOne({
+        $or: [{ id: targetId }, { reference: targetId }],
+      }).lean();
+      if (dDoc) {
+        deposit = { ...dDoc };
+        db.deposits.unshift(deposit);
+      }
+    } catch (e) {}
+  }
+
   if (!deposit) return res.status(404).json({ success: false, message: 'Deposit not found' });
 
   if (deposit.status === 'confirmed') {
@@ -2383,13 +2595,23 @@ apiRouter.post('/admin/deposits/:id/approve', async (req: Request, res: Response
   deposit.confirmations = deposit.requiredConfirmations || 3;
   deposit.updatedAt = new Date().toISOString();
 
-  const user = db.users.find((u) => u.id === deposit.userId);
+  let user: any = db.users.find((u) => u.id === deposit!.userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc: any = await (UserModel as any).findOne({ id: deposit!.userId }).lean();
+      if (uDoc) {
+        user = { ...uDoc };
+        db.users.push(user);
+      }
+    } catch (e) {}
+  }
+
   if (user) {
     user.balance = Number((user.balance + deposit.amount).toFixed(2));
     user.totalDeposits = Number(((user.totalDeposits || 0) + deposit.amount).toFixed(2));
     user.updatedAt = new Date().toISOString();
 
-    db.transactions.unshift({
+    const newTx: any = {
       id: `tx_dep_${Date.now()}`,
       userId: user.id,
       type: 'deposit',
@@ -2399,11 +2621,25 @@ apiRouter.post('/admin/deposits/:id/approve', async (req: Request, res: Response
       description: `Confirmed Deposit via ${deposit.provider}`,
       status: 'completed',
       createdAt: new Date().toISOString(),
-    });
+    };
+    db.transactions.unshift(newTx);
+
+    if (isMongoConnected()) {
+      try {
+        await UserModel.updateOne(
+          { id: user.id },
+          { $set: { balance: user.balance, totalDeposits: user.totalDeposits, updatedAt: user.updatedAt } }
+        );
+        await TransactionModel.create(newTx);
+      } catch (err: any) {
+        console.warn('[MongoDB] Admin approve deposit sync error:', err.message);
+      }
+    }
 
     creditReferralBonus(user, deposit);
   }
 
+  await saveDepositToMongo(deposit);
   await db.saveData();
 
   // Instant Alert: Send Telegram Notification for Admin Approved Deposit
@@ -2429,32 +2665,46 @@ apiRouter.post('/admin/deposits/:id/approve', async (req: Request, res: Response
 
 // Admin: Reject Deposit
 apiRouter.post('/admin/deposits/:id/reject', async (req: Request, res: Response) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {}
+  await ensureMongoConnected();
+  const targetId = req.params.id;
 
-  const deposit = db.deposits.find((d) => d.id === req.params.id);
+  let deposit = db.deposits.find((d) => d.id === targetId || d.reference === targetId);
+  if (!deposit && isMongoConnected()) {
+    try {
+      const dDoc: any = await (DepositModel as any).findOne({
+        $or: [{ id: targetId }, { reference: targetId }],
+      }).lean();
+      if (dDoc) {
+        deposit = { ...dDoc };
+        db.deposits.unshift(deposit);
+      }
+    } catch (e) {}
+  }
+
   if (!deposit) return res.status(404).json({ success: false, message: 'Deposit not found' });
 
   deposit.status = 'rejected';
   deposit.updatedAt = new Date().toISOString();
 
+  await saveDepositToMongo(deposit);
   await db.saveData();
   res.json({ success: true, message: 'Deposit rejected successfully', deposit });
 });
 
 // Admin: Delete Deposit
 apiRouter.post('/admin/deposits/:id/delete', async (req: Request, res: Response) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {}
+  await ensureMongoConnected();
+  const targetId = req.params.id;
 
-  const index = db.deposits.findIndex((d) => d.id === req.params.id);
-  if (index === -1) return res.status(404).json({ success: false, message: 'Deposit not found' });
+  const index = db.deposits.findIndex((d) => d.id === targetId || d.reference === targetId);
+  let removed = null;
+  if (index !== -1) {
+    removed = db.deposits.splice(index, 1)[0];
+  }
 
-  const removed = db.deposits.splice(index, 1)[0];
+  await deleteDepositFromMongo(targetId);
   await db.saveData();
-  res.json({ success: true, message: `Deposit ${removed.reference || removed.id} deleted successfully.`, deposit: removed });
+  res.json({ success: true, message: `Deposit ${removed?.reference || targetId} deleted successfully.`, deposit: removed });
 });
 
 // Admin: Manually credit user account balance or activate mining

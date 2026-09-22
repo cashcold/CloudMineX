@@ -550,6 +550,7 @@ class DBStore {
       const {
         connectMongoDB,
         isMongoConnected,
+        getUnifiedMongoDeposits,
         getUnifiedMongoWithdrawals,
         getUnifiedMongoContracts,
         UserModel,
@@ -617,26 +618,11 @@ class DBStore {
       }
       this.ensureDefaultPlans();
 
-      const mongoDeposits = await DepositModel.find().lean();
-      if (mongoDeposits) {
-        this.deposits = mongoDeposits.map((d: any) => ({
-          id: d.id,
-          userId: d.userId,
-          type: d.type,
-          provider: d.provider,
-          currency: d.currency,
-          network: d.network,
-          amount: d.amount,
-          cryptoAmount: d.cryptoAmount,
-          address: d.address,
-          reference: d.reference,
-          transactionHash: d.transactionHash,
-          status: d.status,
-          confirmations: d.confirmations,
-          requiredConfirmations: d.requiredConfirmations,
-          createdAt: d.createdAt || new Date().toISOString(),
-          updatedAt: d.updatedAt || new Date().toISOString(),
-        }));
+      const mongoDeposits = await getUnifiedMongoDeposits();
+      if (mongoDeposits && mongoDeposits.length > 0) {
+        this.deposits = mongoDeposits;
+      } else if (mongoDeposits && this.deposits.length === 0) {
+        this.deposits = [];
       }
 
       // Fetch unified withdrawals across MongoDB collections (respecting direct MongoDB updates & deletions)

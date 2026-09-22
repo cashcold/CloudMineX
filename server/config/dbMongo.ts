@@ -74,24 +74,27 @@ const miningContractSchema = new Schema<MiningContractCloudMineX>(
   { strict: false }
 );
 
-const depositSchema = new Schema<DepositCloudMineX>({
-  id: { type: String, required: true, unique: true },
-  userId: { type: String, required: true },
-  type: { type: String, required: true },
-  provider: { type: String, required: true },
-  currency: { type: String, required: true },
-  network: { type: String },
-  amount: { type: Number, required: true },
-  cryptoAmount: { type: Number },
-  address: { type: String },
-  reference: { type: String, required: true },
-  transactionHash: { type: String },
-  status: { type: String, default: 'pending' },
-  confirmations: { type: Number, default: 0 },
-  requiredConfirmations: { type: Number, default: 3 },
-  createdAt: { type: String },
-  updatedAt: { type: String },
-});
+const depositSchema = new Schema<DepositCloudMineX>(
+  {
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true },
+    type: { type: String, required: true },
+    provider: { type: String, required: true },
+    currency: { type: String, required: true },
+    network: { type: String },
+    amount: { type: Number, required: true },
+    cryptoAmount: { type: Number },
+    address: { type: String },
+    reference: { type: String, required: true },
+    transactionHash: { type: String },
+    status: { type: String, default: 'pending' },
+    confirmations: { type: Number, default: 0 },
+    requiredConfirmations: { type: Number, default: 3 },
+    createdAt: { type: String },
+    updatedAt: { type: String },
+  },
+  { strict: false }
+);
 
 const withdrawalSchema = new Schema<WithdrawalCloudMineX>({
   id: { type: String, required: true, unique: true },
@@ -327,6 +330,141 @@ export async function getUnifiedMongoWithdrawals(): Promise<WithdrawalCloudMineX
   }
 
   return result;
+}
+
+/**
+ * Reads all deposits from MongoDB, checking both the Mongoose collection
+ * ('depositcloudminexes') and standard collection ('deposits') if it exists,
+ * so changes made directly in MongoDB Compass or Atlas are always honored.
+ */
+export async function getUnifiedMongoDeposits(): Promise<DepositCloudMineX[]> {
+  if (!isMongoConnected()) return [];
+
+  const depositMap = new Map<string, any>();
+
+  try {
+    // 1. Primary Mongoose model fetch
+    const modelDocs = await DepositModel.find().lean();
+    for (const doc of modelDocs || []) {
+      const key = doc.id || doc.reference;
+      if (key) depositMap.set(key, doc);
+    }
+
+    // 2. Direct database collection inspection (e.g. if user created or edited 'deposits' directly)
+    if (mongoose.connection.db) {
+      const collections = await mongoose.connection.db.listCollections().toArray();
+      const collNames = collections.map((c) => c.name);
+
+      const altNames = ['deposits', 'DepositCloudMineX'];
+      for (const alt of altNames) {
+        if (collNames.includes(alt)) {
+          const rawDocs = await mongoose.connection.db.collection(alt).find({}).toArray();
+          for (const raw of rawDocs) {
+            const key = raw.id || raw.reference;
+            if (!key) continue;
+            // If already present, let raw update take priority if raw has newer updatedAt
+            const existing = depositMap.get(key);
+            if (!existing || (raw.updatedAt && new Date(raw.updatedAt) >= new Date(existing.updatedAt || 0))) {
+              depositMap.set(key, { ...existing, ...raw, id: raw.id || key });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[MongoDB] Unified deposit fetch notice:', err);
+  }
+
+  const result: DepositCloudMineX[] = [];
+  for (const d of depositMap.values()) {
+    result.push({
+      id: d.id || `dep_${Date.now()}`,
+      userId: d.userId,
+      type: d.type || 'mobile_money',
+      provider: d.provider || 'Mobile Money',
+      currency: d.currency || 'GHS',
+      network: d.network,
+      amount: Number(d.amount) || 0,
+      cryptoAmount: d.cryptoAmount !== undefined ? Number(d.cryptoAmount) : undefined,
+      address: d.address,
+      reference: d.reference || d.id,
+      transactionHash: d.transactionHash,
+      status: d.status || 'pending',
+      confirmations: d.confirmations !== undefined ? Number(d.confirmations) : 0,
+      requiredConfirmations: d.requiredConfirmations !== undefined ? Number(d.requiredConfirmations) : 3,
+      createdAt: d.createdAt || new Date().toISOString(),
+      updatedAt: d.updatedAt || new Date().toISOString(),
+    });
+  }
+
+  // Sort by createdAt descending
+  result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return result;
+}
+
+/**
+ * Persists a deposit to MongoDB in both DepositModel and direct 'deposits' collection
+ */
+export async function saveDepositToMongo(deposit: DepositCloudMineX): Promise<void> {
+  await ensureMongoConnected();
+  if (!isMongoConnected()) return;
+
+  try {
+    const cleanDeposit = {
+      id: deposit.id,
+      userId: deposit.userId,
+      type: deposit.type,
+      provider: deposit.provider,
+      currency: deposit.currency,
+      network: deposit.network,
+      amount: deposit.amount,
+      cryptoAmount: deposit.cryptoAmount,
+      address: deposit.address,
+      reference: deposit.reference,
+      transactionHash: deposit.transactionHash,
+      status: deposit.status,
+      confirmations: deposit.confirmations,
+      requiredConfirmations: deposit.requiredConfirmations,
+      createdAt: deposit.createdAt,
+      updatedAt: deposit.updatedAt || new Date().toISOString(),
+    };
+
+    const filter = {
+      $or: [
+        { id: deposit.id },
+        ...(deposit.reference ? [{ reference: deposit.reference }] : []),
+      ],
+    };
+
+    // 1. Primary Mongoose model
+    await DepositModel.updateOne(filter, { $set: cleanDeposit }, { upsert: true });
+
+    // 2. Direct collection 'deposits'
+    if (mongoose.connection.db) {
+      await mongoose.connection.db.collection('deposits').updateOne(filter, { $set: cleanDeposit }, { upsert: true });
+    }
+  } catch (err: any) {
+    console.warn('[MongoDB] Save deposit error:', err.message || err);
+  }
+}
+
+/**
+ * Deletes a deposit from MongoDB in both DepositModel and direct 'deposits' collection
+ */
+export async function deleteDepositFromMongo(id: string): Promise<void> {
+  await ensureMongoConnected();
+  if (!isMongoConnected()) return;
+
+  try {
+    const filter = { $or: [{ id }, { reference: id }] };
+    await DepositModel.deleteMany(filter);
+    if (mongoose.connection.db) {
+      await mongoose.connection.db.collection('deposits').deleteMany(filter);
+    }
+  } catch (err: any) {
+    console.warn('[MongoDB] Delete deposit error:', err.message || err);
+  }
 }
 
 /**

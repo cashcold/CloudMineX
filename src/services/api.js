@@ -92,8 +92,8 @@ export const depositService = {
     const res = await api.get(`/deposits/${userId}`);
     return res.data;
   },
-  submitDepositForReview: async (depositId, reference) => {
-    const res = await api.post('/deposits/submit-review', { depositId, reference });
+  submitDepositForReview: async (depositId, reference, userId, amount, provider) => {
+    const res = await api.post('/deposits/submit-review', { depositId, reference, userId, amount, provider });
     return res.data;
   },
   confirmDeposit: async (depositId) => {
