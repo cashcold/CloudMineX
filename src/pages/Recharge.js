@@ -424,30 +424,14 @@ export class Recharge extends Component {
                   </div>
                 </div>
 
-                {/* Instant 24/7 Automated Action button */}
-                <div className="pt-2 space-y-2">
-                  <div className="p-3 bg-[#00D4A8]/10 border border-[#00D4A8]/30 rounded-xl text-[#00D4A8] text-xs leading-relaxed flex items-start gap-2">
-                    <Zap className="w-4 h-4 shrink-0 mt-0.5 fill-[#00D4A8]" />
+                {/* Submission and Review Action */}
+                <div className="pt-2 space-y-3">
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs leading-relaxed flex items-start gap-2">
+                    <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                     <span>
-                      <strong>⚡ 24/7 Instant Automatic Gateway:</strong> Once you complete your Mobile Money transfer, tap below to instantly verify payment and credit your account balance in real-time.
+                      After completing your Mobile Money transfer using the <strong>Payment Reference</strong> above, submit it below for Admin review. Your deposit will be verified and approved in the Admin Portal.
                     </span>
                   </div>
-
-                  
-
-                  {/* Instant Mobile Money Deposit Confirmation Button */}
-                  <button
-                    onClick={() =>
-                      this.handleSimulateDepositConfirmation(
-                        momoPaymentResult.deposit?.id || momoPaymentResult.id
-                      )
-                    }
-                    disabled={isSubmitting}
-                    className="w-full py-3.5 bg-gradient-to-r from-[#00D4A8] via-[#2DD4FF] to-[#00D4A8] text-[#07111F] font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Zap className="w-4 h-4 fill-[#07111F]" />
-                    <span>INSTANT VERIFY & CREDIT DEPOSIT (24/7 AUTOMATED)</span>
-                  </button>
 
                   <button
                     onClick={() =>
@@ -457,15 +441,15 @@ export class Recharge extends Component {
                       )
                     }
                     disabled={isSubmitting}
-                    className="w-full py-2.5 bg-[#0D1B2A] border border-slate-700 text-slate-300 font-bold text-xs uppercase rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-[#00D4A8] to-[#2DD4FF] text-[#07111F] font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
                   >
-                    <ShieldAlert className="w-4 h-4 text-amber-400" />
+                    <ShieldAlert className="w-4 h-4 fill-[#07111F]" />
                     <span>{isSubmitting ? 'Submitting Reference...' : 'Submit Reference for Admin Review'}</span>
                   </button>
 
                   <button
                     onClick={() => this.setState({ momoPaymentResult: null })}
-                    className="w-full py-2 text-slate-400 text-xs font-semibold hover:text-white"
+                    className="w-full py-2 text-slate-400 text-xs font-semibold hover:text-white transition-colors"
                   >
                     Cancel / Back
                   </button>

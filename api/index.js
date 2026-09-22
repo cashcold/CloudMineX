@@ -21,9 +21,17 @@ __export(dbMongo_exports, {
   UserModel: () => UserModel,
   WithdrawalModel: () => WithdrawalModel,
   connectMongoDB: () => connectMongoDB,
+  deduplicateWithdrawalTransactionsInMongo: () => deduplicateWithdrawalTransactionsInMongo,
+  deleteContractFromMongo: () => deleteContractFromMongo,
+  deleteDepositFromMongo: () => deleteDepositFromMongo,
   deleteWithdrawalFromMongo: () => deleteWithdrawalFromMongo,
+  ensureMongoConnected: () => ensureMongoConnected,
+  getUnifiedMongoContracts: () => getUnifiedMongoContracts,
+  getUnifiedMongoDeposits: () => getUnifiedMongoDeposits,
   getUnifiedMongoWithdrawals: () => getUnifiedMongoWithdrawals,
   isMongoConnected: () => isMongoConnected,
+  pruneUserContractsInMongo: () => pruneUserContractsInMongo,
+  saveDepositToMongo: () => saveDepositToMongo,
   updateWithdrawalAmountInMongo: () => updateWithdrawalAmountInMongo
 });
 import mongoose, { Schema } from "mongoose";
@@ -81,6 +89,12 @@ async function connectMongoDB() {
 function isMongoConnected() {
   return mongoose.connection.readyState === 1;
 }
+async function ensureMongoConnected() {
+  const rawUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!rawUri) return false;
+  if (isMongoConnected()) return true;
+  return await connectMongoDB();
+}
 async function getUnifiedMongoWithdrawals() {
   if (!isMongoConnected()) return [];
   const withdrawalMap = /* @__PURE__ */ new Map();
@@ -113,12 +127,6 @@ async function getUnifiedMongoWithdrawals() {
   }
   const result = [];
   for (const w of withdrawalMap.values()) {
-    if (w.reference === "WD-057295" || w.id === "WD-057295" || typeof w.id === "string" && w.id.includes("057295") || w.reference === "WD-082027" || w.id === "WD-082027" || typeof w.id === "string" && w.id.includes("082027")) {
-      continue;
-    }
-    if (w.reference === "WD-215628" || w.id === "WD-215628" || typeof w.id === "string" && w.id.includes("215628")) {
-      w.amount = 65;
-    }
     result.push({
       id: w.id,
       userId: w.userId,
@@ -130,6 +138,170 @@ async function getUnifiedMongoWithdrawals() {
       status: w.status,
       createdAt: w.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
       updatedAt: w.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  return result;
+}
+async function getUnifiedMongoDeposits() {
+  if (!isMongoConnected()) return [];
+  const depositMap = /* @__PURE__ */ new Map();
+  try {
+    const modelDocs = await DepositModel.find().lean();
+    for (const doc of modelDocs || []) {
+      const key = doc.id || doc.reference;
+      if (key) depositMap.set(key, doc);
+    }
+    if (mongoose.connection.db) {
+      const collections = await mongoose.connection.db.listCollections().toArray();
+      const collNames = collections.map((c) => c.name);
+      const altNames = ["deposits", "DepositCloudMineX"];
+      for (const alt of altNames) {
+        if (collNames.includes(alt)) {
+          const rawDocs = await mongoose.connection.db.collection(alt).find({}).toArray();
+          for (const raw of rawDocs) {
+            const key = raw.id || raw.reference;
+            if (!key) continue;
+            const existing = depositMap.get(key);
+            if (!existing || raw.updatedAt && new Date(raw.updatedAt) >= new Date(existing.updatedAt || 0)) {
+              depositMap.set(key, { ...existing, ...raw, id: raw.id || key });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[MongoDB] Unified deposit fetch notice:", err);
+  }
+  const result = [];
+  for (const d of depositMap.values()) {
+    result.push({
+      id: d.id || `dep_${Date.now()}`,
+      userId: d.userId,
+      type: d.type || "mobile_money",
+      provider: d.provider || "Mobile Money",
+      currency: d.currency || "GHS",
+      network: d.network,
+      amount: Number(d.amount) || 0,
+      cryptoAmount: d.cryptoAmount !== void 0 ? Number(d.cryptoAmount) : void 0,
+      address: d.address,
+      reference: d.reference || d.id,
+      transactionHash: d.transactionHash,
+      status: d.status || "pending",
+      confirmations: d.confirmations !== void 0 ? Number(d.confirmations) : 0,
+      requiredConfirmations: d.requiredConfirmations !== void 0 ? Number(d.requiredConfirmations) : 3,
+      createdAt: d.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: d.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return result;
+}
+async function saveDepositToMongo(deposit) {
+  await ensureMongoConnected();
+  if (!isMongoConnected()) return;
+  try {
+    const cleanDeposit = {
+      id: deposit.id,
+      userId: deposit.userId,
+      type: deposit.type,
+      provider: deposit.provider,
+      currency: deposit.currency,
+      network: deposit.network,
+      amount: deposit.amount,
+      cryptoAmount: deposit.cryptoAmount,
+      address: deposit.address,
+      reference: deposit.reference,
+      transactionHash: deposit.transactionHash,
+      status: deposit.status,
+      confirmations: deposit.confirmations,
+      requiredConfirmations: deposit.requiredConfirmations,
+      createdAt: deposit.createdAt,
+      updatedAt: deposit.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const filter = {
+      $or: [
+        { id: deposit.id },
+        ...deposit.reference ? [{ reference: deposit.reference }] : []
+      ]
+    };
+    await DepositModel.updateOne(filter, { $set: cleanDeposit }, { upsert: true });
+    if (mongoose.connection.db) {
+      await mongoose.connection.db.collection("deposits").updateOne(filter, { $set: cleanDeposit }, { upsert: true });
+    }
+  } catch (err) {
+    console.warn("[MongoDB] Save deposit error:", err.message || err);
+  }
+}
+async function deleteDepositFromMongo(id) {
+  await ensureMongoConnected();
+  if (!isMongoConnected()) return;
+  try {
+    const filter = { $or: [{ id }, { reference: id }] };
+    await DepositModel.deleteMany(filter);
+    if (mongoose.connection.db) {
+      await mongoose.connection.db.collection("deposits").deleteMany(filter);
+    }
+  } catch (err) {
+    console.warn("[MongoDB] Delete deposit error:", err.message || err);
+  }
+}
+async function getUnifiedMongoContracts() {
+  if (!isMongoConnected()) return [];
+  const contractMap = /* @__PURE__ */ new Map();
+  try {
+    const modelDocs = await MiningContractModel.find().lean();
+    for (const doc of modelDocs || []) {
+      const key = doc.id;
+      if (key) contractMap.set(key, doc);
+    }
+    if (mongoose.connection.db) {
+      const collections = await mongoose.connection.db.listCollections().toArray();
+      const collNames = collections.map((c) => c.name);
+      const altNames = ["miningcontracts", "mining_contracts", "contracts", "MiningContractCloudMineX"];
+      for (const alt of altNames) {
+        if (collNames.includes(alt)) {
+          const rawDocs = await mongoose.connection.db.collection(alt).find({}).toArray();
+          for (const raw of rawDocs) {
+            const key = raw.id || (raw._id ? raw._id.toString() : null);
+            if (!key) continue;
+            const existing = contractMap.get(key);
+            if (!existing || raw.updatedAt && new Date(raw.updatedAt) >= new Date(existing.updatedAt || 0)) {
+              contractMap.set(key, { ...existing, ...raw, id: raw.id || key });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[MongoDB] Unified contract fetch notice:", err);
+  }
+  const result = [];
+  for (const c of contractMap.values()) {
+    const duration = Number(c.duration || c.durationDays || 7);
+    const amount = Number(c.amount || 100);
+    const rewardRate = Number(c.rewardRate || 0.05);
+    const dailyReward = Number(c.estimatedDailyReward || c.dailyYield || amount * rewardRate || 5);
+    const totalEst = Number(c.estimatedTotalReward || dailyReward * duration || amount * rewardRate * duration);
+    const startDate = c.startDate || c.createdAt || (/* @__PURE__ */ new Date()).toISOString();
+    const startMs = new Date(startDate).getTime();
+    const endDate = c.endDate || c.maturityDate || new Date(startMs + duration * 864e5).toISOString();
+    result.push({
+      id: c.id,
+      userId: c.userId,
+      planId: c.planId || "starter",
+      planName: c.planName || "STARTER MINER",
+      amount,
+      duration,
+      rewardRate,
+      estimatedDailyReward: dailyReward,
+      estimatedTotalReward: totalEst,
+      accumulatedReward: Number(c.accumulatedReward || 0),
+      startDate,
+      endDate,
+      lastCalculatedAt: c.lastCalculatedAt || startDate,
+      status: c.status || "active",
+      createdAt: c.createdAt || startDate,
+      updatedAt: c.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
     });
   }
   return result;
@@ -225,9 +397,113 @@ async function updateWithdrawalAmountInMongo(idOrRef, newAmount) {
     return false;
   }
 }
+async function deleteContractFromMongo(contractId) {
+  if (!isMongoConnected()) return false;
+  try {
+    const filter = { id: contractId };
+    await MiningContractModel.deleteMany(filter);
+    if (mongoose.connection.db) {
+      const colls = await mongoose.connection.db.listCollections().toArray();
+      const collNames = colls.map((c) => c.name);
+      for (const c of ["miningcontracts", "mining_contracts", "contracts", "MiningContractCloudMineX", "miningcontractcloudminexes"]) {
+        if (collNames.includes(c)) {
+          await mongoose.connection.db.collection(c).deleteMany(filter);
+        }
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error("[MongoDB] Error deleting contract from MongoDB:", err);
+    return false;
+  }
+}
+async function pruneUserContractsInMongo(userId, keepContractIds, username) {
+  if (!isMongoConnected()) return false;
+  try {
+    const userMatch = username ? { $or: [{ userId }, { userId: username }] } : { userId };
+    const filter = {
+      ...userMatch,
+      id: { $nin: keepContractIds }
+    };
+    await MiningContractModel.deleteMany(filter);
+    if (mongoose.connection.db) {
+      const colls = await mongoose.connection.db.listCollections().toArray();
+      const collNames = colls.map((c) => c.name);
+      for (const c of ["miningcontracts", "mining_contracts", "contracts", "MiningContractCloudMineX", "miningcontractcloudminexes"]) {
+        if (collNames.includes(c)) {
+          await mongoose.connection.db.collection(c).deleteMany(filter);
+        }
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error("[MongoDB] Error pruning user contracts in MongoDB:", err);
+    return false;
+  }
+}
+async function deduplicateWithdrawalTransactionsInMongo(reference, primaryTx) {
+  if (!isMongoConnected() || !reference) return false;
+  try {
+    const filter = {
+      $or: [
+        { reference },
+        { id: primaryTx.id }
+      ]
+    };
+    const docs = await TransactionModel.find(filter).lean();
+    if (docs.length > 1) {
+      const keepDoc = docs.find((d) => d.id === primaryTx.id) || docs[0];
+      const keepDocId = keepDoc._id;
+      await TransactionModel.deleteMany({
+        reference,
+        _id: { $ne: keepDocId }
+      });
+      if (mongoose.connection.db) {
+        const colls = await mongoose.connection.db.listCollections().toArray();
+        const collNames = colls.map((c) => c.name);
+        for (const t of ["transactions", "transactioncloudminexes", "TransactionCloudMineX"]) {
+          if (collNames.includes(t)) {
+            await mongoose.connection.db.collection(t).deleteMany({
+              reference,
+              _id: { $ne: keepDocId }
+            });
+          }
+        }
+      }
+    }
+    const updateDoc = {
+      $set: {
+        id: primaryTx.id,
+        userId: primaryTx.userId,
+        type: "withdrawal",
+        amount: Number(primaryTx.amount),
+        currency: primaryTx.currency || "GHS",
+        reference: primaryTx.reference,
+        description: primaryTx.description,
+        status: primaryTx.status,
+        destination: primaryTx.destination
+      }
+    };
+    await TransactionModel.updateMany({ reference }, updateDoc);
+    if (mongoose.connection.db) {
+      const colls = await mongoose.connection.db.listCollections().toArray();
+      const collNames = colls.map((c) => c.name);
+      for (const t of ["transactions", "transactioncloudminexes", "TransactionCloudMineX"]) {
+        if (collNames.includes(t)) {
+          await mongoose.connection.db.collection(t).updateMany({ reference }, updateDoc);
+        }
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error("[MongoDB] Error deduplicating withdrawal transaction:", err);
+    return false;
+  }
+}
 var userSchema, miningPlanSchema, miningContractSchema, depositSchema, withdrawalSchema, transactionSchema, referralSchema, chatMessageSchema, appSettingsSchema, UserModel, MiningPlanModel, MiningContractModel, DepositModel, WithdrawalModel, TransactionModel, ReferralModel, ChatMessageModel, AppSettingsModel, cached;
 var init_dbMongo = __esm({
   "server/config/dbMongo.ts"() {
+    mongoose.set("bufferCommands", false);
     userSchema = new Schema({
       id: { type: String, required: true, unique: true },
       username: { type: String, required: true },
@@ -263,42 +539,48 @@ var init_dbMongo = __esm({
       createdAt: { type: String },
       updatedAt: { type: String }
     });
-    miningContractSchema = new Schema({
-      id: { type: String, required: true, unique: true },
-      userId: { type: String, required: true },
-      planId: { type: String, required: true },
-      planName: { type: String, required: true },
-      amount: { type: Number, required: true },
-      duration: { type: Number, required: true },
-      rewardRate: { type: Number, required: true },
-      estimatedDailyReward: { type: Number, required: true },
-      estimatedTotalReward: { type: Number, required: true },
-      accumulatedReward: { type: Number, default: 0 },
-      startDate: { type: String },
-      endDate: { type: String },
-      lastCalculatedAt: { type: String },
-      status: { type: String, enum: ["active", "completed", "cancelled"], default: "active" },
-      createdAt: { type: String },
-      updatedAt: { type: String }
-    });
-    depositSchema = new Schema({
-      id: { type: String, required: true, unique: true },
-      userId: { type: String, required: true },
-      type: { type: String, required: true },
-      provider: { type: String, required: true },
-      currency: { type: String, required: true },
-      network: { type: String },
-      amount: { type: Number, required: true },
-      cryptoAmount: { type: Number },
-      address: { type: String },
-      reference: { type: String, required: true },
-      transactionHash: { type: String },
-      status: { type: String, default: "pending" },
-      confirmations: { type: Number, default: 0 },
-      requiredConfirmations: { type: Number, default: 3 },
-      createdAt: { type: String },
-      updatedAt: { type: String }
-    });
+    miningContractSchema = new Schema(
+      {
+        id: { type: String, required: true, unique: true },
+        userId: { type: String, required: true },
+        planId: { type: String, required: true },
+        planName: { type: String, required: true },
+        amount: { type: Number, required: true },
+        duration: { type: Number },
+        rewardRate: { type: Number },
+        estimatedDailyReward: { type: Number },
+        estimatedTotalReward: { type: Number },
+        accumulatedReward: { type: Number, default: 0 },
+        startDate: { type: String },
+        endDate: { type: String },
+        lastCalculatedAt: { type: String },
+        status: { type: String, enum: ["active", "completed", "cancelled"], default: "active" },
+        createdAt: { type: String },
+        updatedAt: { type: String }
+      },
+      { strict: false }
+    );
+    depositSchema = new Schema(
+      {
+        id: { type: String, required: true, unique: true },
+        userId: { type: String, required: true },
+        type: { type: String, required: true },
+        provider: { type: String, required: true },
+        currency: { type: String, required: true },
+        network: { type: String },
+        amount: { type: Number, required: true },
+        cryptoAmount: { type: Number },
+        address: { type: String },
+        reference: { type: String, required: true },
+        transactionHash: { type: String },
+        status: { type: String, default: "pending" },
+        confirmations: { type: Number, default: 0 },
+        requiredConfirmations: { type: Number, default: 3 },
+        createdAt: { type: String },
+        updatedAt: { type: String }
+      },
+      { strict: false }
+    );
     withdrawalSchema = new Schema({
       id: { type: String, required: true, unique: true },
       userId: { type: String, required: true },
@@ -438,6 +720,17 @@ var DBStore = class {
     this.loadData();
   }
   loadData() {
+    if (process.env.MONGODB_URI || process.env.MONGO_URI) {
+      this.users = [];
+      this.miningContracts = [];
+      this.deposits = [];
+      this.withdrawals = [];
+      this.transactions = [];
+      this.referrals = [];
+      this.chatMessages = [];
+      this.ensureDefaultPlans();
+      return;
+    }
     try {
       let fileToRead = DATA_FILE;
       if (process.env.VERCEL && fs.existsSync(TMP_DATA_FILE)) {
@@ -465,6 +758,7 @@ var DBStore = class {
         }
         this.ensureDefaultPlans();
         this.reconcileWithdrawalTransactions();
+        this.reconcileUserContracts();
       } else {
         this.seedInitialData();
       }
@@ -608,111 +902,88 @@ var DBStore = class {
     }
   }
   cleanupSpecificRecords() {
-    this.withdrawals = this.withdrawals.filter(
-      (w) => w.reference !== "WD-057295" && w.id !== "WD-057295" && !(typeof w.id === "string" && w.id.includes("057295")) && w.reference !== "WD-082027" && w.id !== "WD-082027" && !(typeof w.id === "string" && w.id.includes("082027"))
-    );
-    this.transactions = this.transactions.filter(
-      (t) => t.reference !== "WD-057295" && !(typeof t.id === "string" && t.id.includes("057295")) && !(t.description && t.description.includes("057295")) && t.reference !== "WD-082027" && !(typeof t.id === "string" && t.id.includes("082027")) && !(t.description && t.description.includes("082027"))
-    );
-    for (const w of this.withdrawals) {
-      if (w.reference === "WD-215628" || w.id === "WD-215628" || typeof w.id === "string" && w.id.includes("215628")) {
-        w.amount = 65;
-        w.destination = "0597126658";
-        w.provider = "MTN MoMo";
-      }
-    }
-    for (const t of this.transactions) {
-      if (t.reference === "WD-215628" || typeof t.id === "string" && t.id.includes("215628")) {
-        t.amount = 65;
-        t.destination = "0597126658";
-      }
-    }
-    const alienUser = this.users.find(
-      (u) => u.id === "usr_1789653080484" || u.username === "alienmonies"
-    );
-    if (alienUser) {
-      alienUser.claimedMilestones = alienUser.claimedMilestones || [];
-      if (!alienUser.claimedMilestones.includes("bronze")) {
-        alienUser.claimedMilestones.push("bronze");
-      }
-    }
-    const seenYieldKeys = /* @__PURE__ */ new Set();
-    this.transactions = this.transactions.filter((tx) => {
-      if (tx.type === "mining_reward" && tx.description && tx.description.includes("(Day ")) {
-        const match = tx.description.match(/\(Day (\d+)\//);
-        if (match) {
-          const dayNum = match[1];
-          const planRef = (tx.reference || "").split("-").slice(0, 2).join("-");
-          const key = `${tx.userId}_${planRef}_day_${dayNum}`;
-          if (seenYieldKeys.has(key)) {
-            return false;
-          }
-          seenYieldKeys.add(key);
-        }
-      }
-      return true;
-    });
-    const mawuli = this.users.find((u) => u.id === "usr_1789654475484" || u.username === "Mawuli");
-    if (mawuli) {
-      const seenMawuliDays = /* @__PURE__ */ new Set();
-      this.transactions = this.transactions.filter((t) => {
-        if (t.userId === mawuli.id && t.type === "mining_reward") {
-          const match = (t.description || "").match(/\(Day (\d+)\//);
-          if (match) {
-            const dayKey = `day_${match[1]}`;
-            if (seenMawuliDays.has(dayKey)) return false;
-            seenMawuliDays.add(dayKey);
-            return true;
-          }
-        }
-        return true;
-      });
-      const mawuliYieldTxs = this.transactions.filter(
-        (t) => t.userId === mawuli.id && t.type === "mining_reward" && t.status === "completed"
-      );
-      const totalYieldAmount = Number(mawuliYieldTxs.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(2));
-      const yieldDaysCount = mawuliYieldTxs.length;
-      const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === "active");
-      if (mawuliContract) {
-        mawuliContract.accumulatedReward = totalYieldAmount;
-        if (yieldDaysCount > 0) {
-          const startMs = new Date(mawuliContract.startDate || mawuliContract.createdAt).getTime();
-          mawuliContract.lastCalculatedAt = new Date(startMs + yieldDaysCount * 24 * 60 * 60 * 1e3).toISOString();
-        }
-      }
-      mawuli.totalRewards = totalYieldAmount;
-      const baseDeductions = 98;
-      mawuli.balance = Number(Math.max(0, totalYieldAmount - baseDeductions).toFixed(2));
-      mawuli.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    }
+    return;
   }
   reconcileWithdrawalTransactions() {
     this.cleanupSpecificRecords();
     let modified = false;
     const activeRefs = new Set(this.withdrawals.map((w) => w.reference).filter(Boolean));
     const activeIds = new Set(this.withdrawals.map((w) => w.id).filter(Boolean));
+    const initialTxCount = this.transactions.length;
+    this.transactions = this.transactions.filter((t) => {
+      if (t.type === "withdrawal") {
+        const hasMatchingWd = t.reference && activeRefs.has(t.reference) || this.withdrawals.some((w) => t.id && t.id.includes(w.id.replace("wd_", "")) || w.reference && t.reference === w.reference);
+        return hasMatchingWd;
+      }
+      return true;
+    });
+    if (this.transactions.length !== initialTxCount) {
+      modified = true;
+    }
     for (const wd of this.withdrawals) {
       if (!wd.reference && !wd.id) continue;
-      const matchedTx = this.transactions.find(
+      const matchingTxs = this.transactions.filter(
         (t) => wd.reference && t.reference === wd.reference || t.type === "withdrawal" && t.id.includes(wd.id.replace("wd_", ""))
       );
-      if (matchedTx && wd.destination) {
-        const isApprovedOrCompleted = wd.status === "approved" || wd.status === "completed";
-        const expectedDesc = isApprovedOrCompleted ? `Withdrawal to ${wd.destination}` : `Withdrawal request to ${wd.destination}`;
-        const expectedStatus = isApprovedOrCompleted ? "completed" : wd.status === "rejected" ? "failed" : "pending";
-        if (matchedTx.description !== expectedDesc || matchedTx.destination !== wd.destination || matchedTx.status !== expectedStatus || matchedTx.amount !== wd.amount) {
-          matchedTx.description = expectedDesc;
-          matchedTx.destination = wd.destination;
-          matchedTx.status = expectedStatus;
-          matchedTx.amount = wd.amount;
-          modified = true;
+      if (matchingTxs.length === 0) continue;
+      if (matchingTxs.length > 1) {
+        matchingTxs.sort((a, b) => {
+          if (a.status === "completed" && b.status !== "completed") return -1;
+          if (b.status === "completed" && a.status !== "completed") return 1;
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        });
+        const keep = matchingTxs[0];
+        const removeIds = new Set(matchingTxs.slice(1).map((t) => t.id));
+        this.transactions = this.transactions.filter((t) => !removeIds.has(t.id));
+        modified = true;
+        if (wd.reference) {
+          Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports)).then(({ deduplicateWithdrawalTransactionsInMongo: deduplicateWithdrawalTransactionsInMongo2 }) => {
+            deduplicateWithdrawalTransactionsInMongo2(wd.reference, keep).catch(() => {
+            });
+          }).catch(() => {
+          });
         }
+      }
+      const matchedTx = matchingTxs[0];
+      const isApprovedOrCompleted = wd.status === "approved" || wd.status === "completed";
+      const dest = wd.destination || matchedTx.destination || "Mobile Wallet";
+      const expectedDesc = isApprovedOrCompleted ? `Withdrawal to ${dest}` : `Withdrawal request to ${dest}`;
+      const expectedStatus = isApprovedOrCompleted ? "completed" : wd.status === "rejected" ? "failed" : "pending";
+      if (matchedTx.description !== expectedDesc || matchedTx.destination !== dest || matchedTx.status !== expectedStatus || matchedTx.amount !== wd.amount) {
+        matchedTx.description = expectedDesc;
+        matchedTx.destination = dest;
+        matchedTx.status = expectedStatus;
+        matchedTx.amount = wd.amount;
+        modified = true;
+      }
+    }
+    return modified;
+  }
+  reconcileUserContracts(targetUserId) {
+    let modified = false;
+    const usersToCheck = targetUserId ? this.users.filter((u) => u.id === targetUserId) : this.users;
+    for (const user of usersToCheck) {
+      const userActiveContracts = this.miningContracts.filter(
+        (c) => c.userId === user.id && c.status === "active"
+      );
+      if (user.activeContracts !== userActiveContracts.length) {
+        user.activeContracts = userActiveContracts.length;
+        modified = true;
       }
     }
     return modified;
   }
   async saveData() {
-    this.reconcileWithdrawalTransactions();
+    if (process.env.MONGODB_URI || process.env.MONGO_URI) {
+      return;
+    }
+    try {
+      const { isMongoConnected: isMongoConnected2 } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
+      if (isMongoConnected2()) {
+        return;
+      }
+    } catch (e) {
+    }
     const data = {
       users: this.users,
       miningPlans: this.miningPlans,
@@ -729,83 +1000,26 @@ var DBStore = class {
       const targetFile = process.env.VERCEL ? TMP_DATA_FILE : DATA_FILE;
       fs.writeFileSync(targetFile, jsonString, "utf-8");
     } catch (err) {
-      try {
-        fs.writeFileSync(TMP_DATA_FILE, jsonString, "utf-8");
-      } catch (tmpErr) {
-        console.warn("[DBStore] Read-only serverless filesystem warning. Using in-memory & MongoDB persistence.");
-      }
-    }
-    try {
-      await this.syncToMongo();
-    } catch (err) {
-      console.warn("[DBStore] Background MongoDB sync notice:", err);
     }
   }
   async syncToMongo() {
-    try {
-      const {
-        isMongoConnected: isMongoConnected2,
-        UserModel: UserModel2,
-        MiningPlanModel: MiningPlanModel2,
-        MiningContractModel: MiningContractModel2,
-        DepositModel: DepositModel2,
-        WithdrawalModel: WithdrawalModel2,
-        TransactionModel: TransactionModel2,
-        ReferralModel: ReferralModel2,
-        ChatMessageModel: ChatMessageModel2,
-        AppSettingsModel: AppSettingsModel2
-      } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
-      if (!isMongoConnected2()) return;
-      const ops = [];
-      if (this.users.length > 0) {
-        ops.push(...this.users.map((u) => UserModel2.updateOne({ id: u.id }, { $set: u }, { upsert: true })));
-      }
-      if (this.miningPlans.length > 0) {
-        ops.push(...this.miningPlans.map((p) => MiningPlanModel2.updateOne({ id: p.id }, { $set: p }, { upsert: true })));
-      }
-      if (this.miningContracts.length > 0) {
-        ops.push(...this.miningContracts.map((c) => MiningContractModel2.updateOne({ id: c.id }, { $set: c }, { upsert: true })));
-      }
-      if (this.deposits.length > 0) {
-        ops.push(...this.deposits.map((d) => DepositModel2.updateOne({ id: d.id }, { $set: d }, { upsert: true })));
-      }
-      this.cleanupSpecificRecords();
-      const { deleteWithdrawalFromMongo: deleteWithdrawalFromMongo2 } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
-      deleteWithdrawalFromMongo2("WD-057295").catch(() => {
-      });
-      deleteWithdrawalFromMongo2("WD-082027").catch(() => {
-      });
-      if (this.withdrawals.length > 0) {
-        ops.push(...this.withdrawals.map((w) => WithdrawalModel2.updateOne({ id: w.id }, { $set: w }, { upsert: true })));
-      }
-      if (this.transactions.length > 0) {
-        ops.push(...this.transactions.map((t) => TransactionModel2.updateOne({ id: t.id }, { $set: t }, { upsert: true })));
-      }
-      if (this.referrals.length > 0) {
-        ops.push(...this.referrals.map((r) => ReferralModel2.updateOne({ id: r.id }, { $set: r }, { upsert: true })));
-      }
-      if (this.chatMessages.length > 0) {
-        ops.push(...this.chatMessages.map((cm) => ChatMessageModel2.updateOne({ id: cm.id }, { $set: cm }, { upsert: true })));
-      }
-      ops.push(AppSettingsModel2.updateOne({}, { $set: this.settings }, { upsert: true }));
-      await Promise.all(ops);
-    } catch (err) {
-      console.error("[MongoDB] Sync error:", err);
-    }
+    return;
   }
   async syncFromMongo() {
     try {
       const {
         connectMongoDB: connectMongoDB2,
         isMongoConnected: isMongoConnected2,
+        getUnifiedMongoDeposits: getUnifiedMongoDeposits2,
         getUnifiedMongoWithdrawals: getUnifiedMongoWithdrawals2,
+        getUnifiedMongoContracts: getUnifiedMongoContracts3,
         UserModel: UserModel2,
         MiningPlanModel: MiningPlanModel2,
         MiningContractModel: MiningContractModel2,
         DepositModel: DepositModel2,
         WithdrawalModel: WithdrawalModel2,
         TransactionModel: TransactionModel2,
-        ReferralModel: ReferralModel2,
+        ReferralModel: ReferralModel3,
         ChatMessageModel: ChatMessageModel2,
         AppSettingsModel: AppSettingsModel2
       } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
@@ -827,16 +1041,16 @@ var DBStore = class {
           password: u.password,
           paymentMethod: u.paymentMethod,
           paymentAddress: u.paymentAddress,
-          balance: u.balance || 0,
-          totalDeposits: u.totalDeposits || 0,
+          balance: u.balance !== void 0 ? u.balance : 0,
+          totalDeposits: u.totalDeposits !== void 0 ? u.totalDeposits : 0,
           currency: u.currency || "GHS",
-          referralCode: u.referralCode || u.refCode || "CMX-" + Math.floor(Math.random() * 8999 + 1e3),
+          referralCode: u.referralCode || u.refCode || u.username,
           referredBy: u.referredBy || null,
           vipLevel: u.vipLevel,
           vipTier: u.vipTier,
-          claimedMilestones: Array.isArray(u.claimedMilestones) ? u.claimedMilestones : u.id === "usr_1789653080484" || u.username === "alienmonies" ? ["bronze"] : [],
-          totalRewards: u.totalRewards || 0,
-          activeContracts: u.activeContracts || 0,
+          claimedMilestones: Array.isArray(u.claimedMilestones) ? u.claimedMilestones : [],
+          totalRewards: u.totalRewards !== void 0 ? u.totalRewards : 0,
+          activeContracts: u.activeContracts !== void 0 ? u.activeContracts : 0,
           createdAt: u.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
           updatedAt: u.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
         }));
@@ -859,122 +1073,52 @@ var DBStore = class {
         }));
       }
       this.ensureDefaultPlans();
-      const mongoDeposits = await DepositModel2.find().lean();
-      if (mongoDeposits) {
-        this.deposits = mongoDeposits.map((d) => ({
-          id: d.id,
-          userId: d.userId,
-          type: d.type,
-          provider: d.provider,
-          currency: d.currency,
-          network: d.network,
-          amount: d.amount,
-          cryptoAmount: d.cryptoAmount,
-          address: d.address,
-          reference: d.reference,
-          transactionHash: d.transactionHash,
-          status: d.status,
-          confirmations: d.confirmations,
-          requiredConfirmations: d.requiredConfirmations,
-          createdAt: d.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-          updatedAt: d.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
-        }));
+      const mongoDeposits = await getUnifiedMongoDeposits2();
+      if (mongoDeposits && mongoDeposits.length > 0) {
+        this.deposits = mongoDeposits;
+      } else if (mongoDeposits && this.deposits.length === 0) {
+        this.deposits = [];
       }
       const mongoWithdrawals = await getUnifiedMongoWithdrawals2();
-      if (mongoWithdrawals && mongoWithdrawals.length > 0) {
+      if (mongoWithdrawals) {
         this.withdrawals = mongoWithdrawals;
       }
       this.cleanupSpecificRecords();
-      const mongoContracts = await MiningContractModel2.find().lean();
-      if (mongoContracts && mongoContracts.length > 0) {
-        this.miningContracts = mongoContracts.map((c) => ({
-          id: c.id,
-          userId: c.userId,
-          planId: c.planId,
-          planName: c.planName,
-          amount: c.amount,
-          duration: c.duration,
-          rewardRate: c.rewardRate,
-          estimatedDailyReward: c.estimatedDailyReward,
-          estimatedTotalReward: c.estimatedTotalReward,
-          accumulatedReward: c.accumulatedReward || 0,
-          startDate: c.startDate || c.createdAt,
-          endDate: c.endDate,
-          lastCalculatedAt: c.lastCalculatedAt || c.startDate || c.createdAt,
-          status: c.status || "active",
-          createdAt: c.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-          updatedAt: c.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
-        }));
+      const mongoContracts = await getUnifiedMongoContracts3();
+      if (mongoContracts) {
+        this.miningContracts = mongoContracts;
       }
+      this.reconcileUserContracts();
       const mongoTx = await TransactionModel2.find().lean();
       if (mongoTx) {
-        this.transactions = mongoTx.map((t) => ({
-          id: t.id,
-          userId: t.userId,
-          type: t.type,
-          amount: t.amount,
-          currency: t.currency || "GHS",
-          reference: t.reference || "",
-          description: t.description || "",
-          status: t.status || "completed",
-          destination: t.destination,
-          metadata: t.metadata,
-          createdAt: t.createdAt || (/* @__PURE__ */ new Date()).toISOString()
-        }));
-      }
-      const reconciled = this.reconcileWithdrawalTransactions();
-      if (isMongoConnected2()) {
-        const ops = this.transactions.filter((t) => t.type === "withdrawal").map(
-          (t) => TransactionModel2.updateOne(
-            { id: t.id },
-            { $set: { description: t.description, destination: t.destination, status: t.status, amount: t.amount } },
-            { upsert: true }
-          )
-        );
-        ops.push(
-          WithdrawalModel2.deleteMany({
-            $or: [{ reference: "WD-082027" }, { id: "WD-082027" }, { id: { $regex: "082027" } }]
-          })
-        );
-        ops.push(
-          TransactionModel2.deleteMany({
-            $or: [{ reference: "WD-082027" }, { id: { $regex: "082027" } }, { description: { $regex: "082027" } }]
-          })
-        );
-        const mawuli = this.users.find((u) => u.id === "usr_1789654475484" || u.username === "Mawuli");
-        if (mawuli) {
-          ops.push(
-            UserModel2.updateOne(
-              { id: mawuli.id },
-              { $set: { balance: mawuli.balance, totalRewards: mawuli.totalRewards, updatedAt: (/* @__PURE__ */ new Date()).toISOString() } }
-            )
-          );
-          const mawuliContract = this.miningContracts.find((c) => c.userId === mawuli.id && c.status === "active");
-          if (mawuliContract) {
-            ops.push(
-              MiningContractModel2.updateOne(
-                { id: mawuliContract.id },
-                {
-                  $set: {
-                    accumulatedReward: mawuliContract.accumulatedReward,
-                    lastCalculatedAt: mawuliContract.lastCalculatedAt,
-                    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-                  }
-                }
-              )
-            );
+        const txMap = /* @__PURE__ */ new Map();
+        for (const raw of mongoTx) {
+          const t = {
+            id: raw.id,
+            userId: raw.userId,
+            type: raw.type,
+            amount: raw.amount,
+            currency: raw.currency || "GHS",
+            reference: raw.reference || "",
+            description: raw.description || "",
+            status: raw.status || "completed",
+            destination: raw.destination,
+            metadata: raw.metadata,
+            createdAt: raw.createdAt || (/* @__PURE__ */ new Date()).toISOString()
+          };
+          const key = t.reference ? `${t.type}_${t.reference}` : `id_${t.id}`;
+          const existing = txMap.get(key);
+          if (!existing) {
+            txMap.set(key, t);
+          } else {
+            if (t.status === "completed" || t.status === "approved") {
+              txMap.set(key, t);
+            }
           }
         }
-        ops.push(
-          TransactionModel2.deleteMany({
-            userId: "usr_1789654475484",
-            type: "mining_reward",
-            reference: { $in: ["YIELD-_147-1887", "YIELD-_147-8757", "YIELD-_147-8307"] }
-          })
-        );
-        Promise.all(ops).catch((err) => console.warn("[DBStore] Notice updating reconciled transactions in Mongo:", err));
+        this.transactions = Array.from(txMap.values());
       }
-      const mongoReferrals = await ReferralModel2.find().lean();
+      const mongoReferrals = await ReferralModel3.find().lean();
       if (mongoReferrals && mongoReferrals.length > 0) {
         this.referrals = mongoReferrals.map((r) => ({
           id: r.id,
@@ -1298,23 +1442,37 @@ var db = new DBStore();
 
 // server/services/rewardEngine.ts
 init_dbMongo();
-async function syncYieldsToMongo(updatedUserIds, updatedContracts, createdTransactions) {
+async function syncYieldsToMongo(userYieldMap, updatedContracts, createdTransactions) {
   if (!isMongoConnected()) return;
   try {
-    const userOps = Array.from(updatedUserIds).map((uid) => {
+    const userOps = Array.from(userYieldMap.entries()).map(([uid, yieldAmount]) => {
       const u = db.users.find((user) => user.id === uid);
-      if (!u) return Promise.resolve();
-      return UserModel.updateOne(
-        { id: u.id },
-        {
-          $set: {
-            balance: u.balance,
-            totalRewards: u.totalRewards,
-            activeContracts: u.activeContracts,
-            updatedAt: u.updatedAt
+      if (yieldAmount > 0) {
+        return UserModel.updateOne(
+          { id: uid },
+          {
+            $inc: {
+              balance: yieldAmount,
+              totalRewards: yieldAmount
+            },
+            $set: {
+              ...u ? { activeContracts: u.activeContracts } : {},
+              updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+            }
           }
-        }
-      );
+        );
+      } else if (u) {
+        return UserModel.updateOne(
+          { id: uid },
+          {
+            $set: {
+              activeContracts: u.activeContracts,
+              updatedAt: u.updatedAt
+            }
+          }
+        );
+      }
+      return Promise.resolve();
     });
     const contractOps = updatedContracts.map(
       (cntr) => MiningContractModel.updateOne(
@@ -1349,7 +1507,7 @@ function processMiningYields(targetUserId) {
   let contractsUpdated = 0;
   let contractsCompleted = 0;
   let hasDbChanges = false;
-  const updatedUserIds = /* @__PURE__ */ new Set();
+  const userYieldMap = /* @__PURE__ */ new Map();
   const updatedContracts = [];
   const createdTransactions = [];
   for (const contract of activeContracts) {
@@ -1402,6 +1560,7 @@ function processMiningYields(targetUserId) {
       creditedTotal += dailyReward;
       newDaysCredited++;
       contractCreditedCount++;
+      userYieldMap.set(user.id, (userYieldMap.get(user.id) || 0) + dailyReward);
     }
     const correctAccumulatedReward = Number((contractCreditedCount * dailyReward).toFixed(2));
     if (newDaysCredited > 0 || contract.accumulatedReward !== correctAccumulatedReward) {
@@ -1410,7 +1569,9 @@ function processMiningYields(targetUserId) {
       contract.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
       contractsUpdated++;
       hasDbChanges = true;
-      updatedUserIds.add(user.id);
+      if (!userYieldMap.has(user.id)) {
+        userYieldMap.set(user.id, 0);
+      }
       if (!updatedContracts.includes(contract)) {
         updatedContracts.push(contract);
       }
@@ -1424,7 +1585,9 @@ function processMiningYields(targetUserId) {
       }
       contractsCompleted++;
       hasDbChanges = true;
-      updatedUserIds.add(user.id);
+      if (!userYieldMap.has(user.id)) {
+        userYieldMap.set(user.id, 0);
+      }
       if (!updatedContracts.includes(contract)) {
         updatedContracts.push(contract);
       }
@@ -1449,7 +1612,7 @@ function processMiningYields(targetUserId) {
   }
   if (hasDbChanges) {
     db.saveData();
-    syncYieldsToMongo(updatedUserIds, updatedContracts, createdTransactions).catch(
+    syncYieldsToMongo(userYieldMap, updatedContracts, createdTransactions).catch(
       (err) => console.error("[MongoDB] Background yield sync notice:", err)
     );
   }
@@ -2517,14 +2680,23 @@ apiRouter.get("/users/demo", (req, res) => {
   res.json({ success: true, user: demoUser });
 });
 apiRouter.get("/users/:id", async (req, res) => {
+  await ensureMongoConnected();
   if (isMongoConnected()) {
-    try {
-      await db.syncFromMongo();
-    } catch (e) {
+    const rawId = req.params.id;
+    const user2 = await UserModel.findOne({
+      $or: [
+        { id: rawId },
+        { username: rawId },
+        { username: new RegExp(`^${rawId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+        { email: rawId.toLowerCase() }
+      ]
+    }).lean();
+    if (!user2) {
+      return res.status(404).json({ success: false, message: "User not found" });
     }
+    return res.json({ success: true, user: user2 });
   }
-  processMiningYields(req.params.id);
-  const user = db.users.find((u) => u.id === req.params.id);
+  const user = db.users.find((u) => u.id === req.params.id || u.username === req.params.id || u.email && u.email.toLowerCase() === req.params.id.toLowerCase());
   if (!user) {
     return res.status(404).json({ success: false, message: "User not found" });
   }
@@ -2554,18 +2726,108 @@ apiRouter.post("/sync/refresh", async (req, res) => {
     message: "MongoDB is not connected. Operating in local storage mode."
   });
 });
-apiRouter.get("/mining-plans", (req, res) => {
+apiRouter.get("/mining-plans", async (req, res) => {
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const plans = await MiningPlanModel.find({ active: { $ne: false } }).lean();
+    if (plans && plans.length > 0) {
+      return res.json({ success: true, plans });
+    }
+  }
   res.json({ success: true, plans: db.miningPlans.filter((p) => p.active) });
 });
-apiRouter.get("/mining-plans/:id", (req, res) => {
+apiRouter.get("/mining-plans/:id", async (req, res) => {
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const plan2 = await MiningPlanModel.findOne({ id: req.params.id }).lean();
+    if (plan2) {
+      return res.json({ success: true, plan: plan2 });
+    }
+  }
   const plan = db.miningPlans.find((p) => p.id === req.params.id);
   if (!plan) {
     return res.status(404).json({ success: false, message: "Mining plan not found" });
   }
   res.json({ success: true, plan });
 });
-apiRouter.post("/mining/start", (req, res) => {
+apiRouter.post("/mining/start", async (req, res) => {
   const { userId, planId } = req.body;
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const userDoc = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
+      ]
+    }).lean();
+    if (!userDoc) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    let planDoc = await MiningPlanModel.findOne({ id: planId }).lean();
+    if (!planDoc) {
+      planDoc = db.miningPlans.find((p) => p.id === planId);
+    }
+    if (!planDoc || planDoc.active === false) {
+      return res.status(400).json({ success: false, message: "Mining plan not available or inactive" });
+    }
+    const currentBalance = userDoc.balance !== void 0 ? userDoc.balance : 0;
+    if (currentBalance < planDoc.price) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient balance. Required GHS ${planDoc.price.toFixed(2)}, available GHS ${currentBalance.toFixed(2)}. Please recharge first.`
+      });
+    }
+    const now2 = /* @__PURE__ */ new Date();
+    const endDate2 = new Date(now2.getTime() + planDoc.duration * 864e5).toISOString();
+    const contract2 = {
+      id: `cntr_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
+      userId: userDoc.id,
+      planId: planDoc.id,
+      planName: planDoc.name,
+      amount: planDoc.price,
+      duration: planDoc.duration,
+      rewardRate: planDoc.rewardRate,
+      estimatedDailyReward: planDoc.estimatedDailyReward,
+      estimatedTotalReward: planDoc.estimatedTotalReward,
+      accumulatedReward: 0,
+      startDate: now2.toISOString(),
+      endDate: endDate2,
+      lastCalculatedAt: now2.toISOString(),
+      status: "active",
+      createdAt: now2.toISOString(),
+      updatedAt: now2.toISOString()
+    };
+    const tx2 = {
+      id: `tx_p_${Date.now()}`,
+      userId: userDoc.id,
+      type: "mining_purchase",
+      amount: planDoc.price,
+      currency: "GHS",
+      reference: `PURCHASE-${planDoc.name.replace(/\s+/g, "-").toUpperCase()}-${Date.now().toString().slice(-4)}`,
+      description: `Purchase ${planDoc.name} Contract (${planDoc.duration} Days)`,
+      status: "completed",
+      createdAt: now2.toISOString()
+    };
+    await Promise.all([
+      MiningContractModel.updateOne({ id: contract2.id }, { $set: contract2 }, { upsert: true }),
+      UserModel.updateOne(
+        { id: userDoc.id },
+        {
+          $inc: { balance: -planDoc.price, activeContracts: 1 },
+          $set: { updatedAt: now2.toISOString() }
+        }
+      ),
+      TransactionModel.updateOne({ id: tx2.id }, { $set: tx2 }, { upsert: true })
+    ]);
+    const updatedUser = await UserModel.findOne({ id: userDoc.id }).lean();
+    return res.json({
+      success: true,
+      message: `Successfully activated ${planDoc.name}! Mining contract started.`,
+      contract: contract2,
+      user: updatedUser
+    });
+  }
   const user = db.users.find((u) => u.id === userId);
   if (!user) {
     return res.status(404).json({ success: false, message: "User not found" });
@@ -2625,17 +2887,40 @@ apiRouter.post("/mining/start", (req, res) => {
   });
 });
 apiRouter.get("/mining/user/:userId", async (req, res) => {
+  const userId = req.params.userId;
+  await ensureMongoConnected();
   if (isMongoConnected()) {
-    try {
-      await db.syncFromMongo();
-    } catch (e) {
-    }
+    const userDoc = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
+      ]
+    }).lean();
+    const actualUserId2 = userDoc ? userDoc.id : userId;
+    const username = userDoc?.username;
+    const contracts2 = await MiningContractModel.find({
+      $or: [
+        { userId: actualUserId2 },
+        ...username ? [{ userId: username }] : []
+      ],
+      status: "active"
+    }).lean();
+    return res.json({ success: true, contracts: contracts2 });
   }
-  processMiningYields(req.params.userId);
-  const contracts = db.miningContracts.filter((c) => c.userId === req.params.userId);
+  const user = db.users.find((u) => u.id === userId || u.username === userId || u.username && u.username.toLowerCase() === userId.toLowerCase());
+  const actualUserId = user ? user.id : userId;
+  const contracts = db.miningContracts.filter((c) => (c.userId === actualUserId || user && c.userId === user.username) && c.status === "active");
   res.json({ success: true, contracts });
 });
-apiRouter.get("/mining/:id", (req, res) => {
+apiRouter.get("/mining/:id", async (req, res) => {
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const contract2 = await MiningContractModel.findOne({ id: req.params.id }).lean();
+    if (contract2) {
+      return res.json({ success: true, contract: contract2 });
+    }
+  }
   const contract = db.miningContracts.find((c) => c.id === req.params.id);
   if (!contract) {
     return res.status(404).json({ success: false, message: "Mining contract not found" });
@@ -2725,11 +3010,19 @@ apiRouter.post("/deposits/mobile-money", async (req, res) => {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   db.deposits.unshift(deposit);
+  await saveDepositToMongo(deposit);
   await db.saveData();
-  const user = db.users.find((u) => u.id === userId);
+  let user = db.users.find((u) => u.id === userId || u.username === userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc = await UserModel.findOne({ $or: [{ id: userId }, { username: userId }] }).lean();
+      if (uDoc) user = uDoc;
+    } catch (e) {
+    }
+  }
   sendDepositNotification({
     username: user?.username || user?.email || "CloudMineX User",
-    userId: user?.id,
+    userId: user?.id || userId,
     userEmail: user?.email,
     amount: result.amount,
     currency: "GHS",
@@ -2781,11 +3074,19 @@ apiRouter.post("/deposits/crypto", async (req, res) => {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   db.deposits.unshift(deposit);
+  await saveDepositToMongo(deposit);
   await db.saveData();
-  const user = db.users.find((u) => u.id === userId);
+  let user = db.users.find((u) => u.id === userId || u.username === userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc = await UserModel.findOne({ $or: [{ id: userId }, { username: userId }] }).lean();
+      if (uDoc) user = uDoc;
+    } catch (e) {
+    }
+  }
   sendDepositNotification({
     username: user?.username || user?.email || "CloudMineX User",
-    userId: user?.id,
+    userId: user?.id || userId,
     userEmail: user?.email,
     amount: result.amount,
     currency: curr,
@@ -2805,44 +3106,100 @@ apiRouter.post("/deposits/crypto", async (req, res) => {
   });
 });
 apiRouter.post("/deposits/submit-review", async (req, res) => {
-  const { depositId, reference } = req.body;
-  try {
-    await db.syncFromMongo();
-  } catch (e) {
-  }
+  const { depositId, reference, userId: bodyUserId, username: bodyUsername, amount: bodyAmount, provider: bodyProvider, currency: bodyCurrency } = req.body;
+  await ensureMongoConnected();
+  const trimmedRef = reference ? reference.trim() : "";
   let deposit = db.deposits.find(
-    (d) => depositId && d.id === depositId || reference && d.reference?.trim().toLowerCase() === reference.trim().toLowerCase()
+    (d) => depositId && d.id === depositId || trimmedRef && d.reference && d.reference.toLowerCase() === trimmedRef.toLowerCase()
   );
+  if (!deposit && isMongoConnected()) {
+    try {
+      const mongoDep = await DepositModel.findOne({
+        $or: [
+          ...depositId ? [{ id: depositId }] : [],
+          ...trimmedRef ? [{ reference: trimmedRef }, { reference: new RegExp(`^${trimmedRef.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }] : []
+        ]
+      }).lean();
+      if (mongoDep) {
+        deposit = { ...mongoDep };
+      }
+    } catch (e) {
+    }
+  }
+  let targetUser = null;
+  const userLookup = bodyUserId || bodyUsername;
+  if (userLookup) {
+    targetUser = db.users.find((u) => u.id === userLookup || u.username?.toLowerCase() === userLookup.toLowerCase());
+    if (!targetUser && isMongoConnected()) {
+      try {
+        const uDoc = await UserModel.findOne({
+          $or: [
+            { id: userLookup },
+            { username: userLookup },
+            { username: new RegExp(`^${userLookup.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
+          ]
+        }).lean();
+        if (uDoc) targetUser = uDoc;
+      } catch (e) {
+      }
+    }
+  }
+  if (!targetUser && deposit?.userId) {
+    targetUser = db.users.find((u) => u.id === deposit.userId);
+    if (!targetUser && isMongoConnected()) {
+      try {
+        const uDoc = await UserModel.findOne({ id: deposit.userId }).lean();
+        if (uDoc) targetUser = uDoc;
+      } catch (e) {
+      }
+    }
+  }
+  if (!targetUser && db.users.length > 0) {
+    targetUser = db.users[0];
+  }
   if (deposit) {
     deposit.status = "pending";
     deposit.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  } else if (reference) {
-    const fallbackUser = db.users[0];
+    if (trimmedRef) deposit.reference = trimmedRef;
+    if (bodyAmount && Number(bodyAmount) > 0) deposit.amount = Number(bodyAmount);
+    if (targetUser && (!deposit.userId || deposit.userId === "usr_default")) {
+      deposit.userId = targetUser.id;
+    }
+    const memIdx = db.deposits.findIndex((d) => d.id === deposit.id);
+    if (memIdx !== -1) {
+      db.deposits[memIdx] = deposit;
+    } else {
+      db.deposits.unshift(deposit);
+    }
+  } else if (trimmedRef) {
+    const depositAmount = Number(bodyAmount) || 100;
     deposit = {
-      id: `dep_${Date.now()}`,
-      userId: fallbackUser ? fallbackUser.id : "usr_default",
-      type: "mobile_money",
-      provider: "Mobile Money",
-      currency: "GHS",
-      amount: 100,
-      reference: reference.trim(),
+      id: depositId || `dep_${Date.now()}`,
+      userId: targetUser ? targetUser.id : bodyUserId || "usr_default",
+      type: bodyProvider?.toLowerCase().includes("crypto") ? "crypto" : "mobile_money",
+      provider: bodyProvider || "Mobile Money",
+      currency: bodyCurrency || "GHS",
+      amount: depositAmount,
+      reference: trimmedRef,
       status: "pending",
+      confirmations: 0,
+      requiredConfirmations: 3,
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
       updatedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
     db.deposits.unshift(deposit);
   }
   if (deposit) {
+    await saveDepositToMongo(deposit);
     await db.saveData();
-    const targetUser = db.users.find((u) => u.id === deposit.userId);
     sendDepositNotification({
       username: targetUser?.username || targetUser?.email || "CloudMineX User",
-      userId: targetUser?.id,
+      userId: targetUser?.id || deposit.userId,
       userEmail: targetUser?.email,
       amount: deposit.amount,
       currency: deposit.currency || "GHS",
       method: `${deposit.provider || "Mobile Money"} (Review Submitted)`,
-      reference: reference || deposit.reference,
+      reference: trimmedRef || deposit.reference,
       status: "pending",
       createdAt: deposit.updatedAt || deposit.createdAt
     }).catch((err) => {
@@ -2850,22 +3207,49 @@ apiRouter.post("/deposits/submit-review", async (req, res) => {
     });
     return res.json({
       success: true,
-      message: `Deposit reference ${reference || deposit.reference} submitted for Admin review!`,
+      message: `Deposit reference ${trimmedRef || deposit.reference} submitted for Admin review! Your balance will be credited upon review.`,
       deposit
     });
   }
   res.status(400).json({ success: false, message: "Deposit reference could not be registered." });
 });
 apiRouter.get("/deposits/:userId", async (req, res) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {
+  const userId = req.params.userId;
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const userDoc = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
+      ]
+    }).lean();
+    const actualUserId = userDoc ? userDoc.id : userId;
+    const allDeposits = await getUnifiedMongoDeposits();
+    const userDeposits2 = allDeposits.filter(
+      (d) => d.userId === actualUserId || d.userId === userId || userDoc?.username && d.userId?.toLowerCase() === userDoc.username.toLowerCase()
+    );
+    return res.json({ success: true, deposits: userDeposits2 });
   }
-  const userDeposits = db.deposits.filter((d) => d.userId === req.params.userId);
+  const userDeposits = db.deposits.filter((d) => d.userId === userId);
   res.json({ success: true, deposits: userDeposits });
 });
 apiRouter.post("/deposits/:id/confirm-demo", async (req, res) => {
-  const deposit = db.deposits.find((d) => d.id === req.params.id);
+  await ensureMongoConnected();
+  const targetId = req.params.id;
+  let deposit = db.deposits.find((d) => d.id === targetId || d.reference === targetId);
+  if (!deposit && isMongoConnected()) {
+    try {
+      const dDoc = await DepositModel.findOne({
+        $or: [{ id: targetId }, { reference: targetId }]
+      }).lean();
+      if (dDoc) {
+        deposit = { ...dDoc };
+        db.deposits.unshift(deposit);
+      }
+    } catch (e) {
+    }
+  }
   if (!deposit) return res.status(404).json({ success: false, message: "Deposit not found" });
   if (deposit.status === "confirmed") {
     return res.status(400).json({ success: false, message: "Deposit already confirmed" });
@@ -2873,24 +3257,47 @@ apiRouter.post("/deposits/:id/confirm-demo", async (req, res) => {
   deposit.status = "confirmed";
   deposit.confirmations = deposit.requiredConfirmations || 3;
   deposit.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  const user = db.users.find((u) => u.id === deposit.userId);
+  let user = db.users.find((u) => u.id === deposit.userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc = await UserModel.findOne({ id: deposit.userId }).lean();
+      if (uDoc) {
+        user = { ...uDoc };
+        db.users.push(user);
+      }
+    } catch (e) {
+    }
+  }
   if (user) {
     user.balance = Number((user.balance + deposit.amount).toFixed(2));
     user.totalDeposits = Number(((user.totalDeposits || 0) + deposit.amount).toFixed(2));
     user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    db.transactions.unshift({
+    const newTx = {
       id: `tx_dep_${Date.now()}`,
       userId: user.id,
       type: "deposit",
       amount: deposit.amount,
-      currency: "GHS",
+      currency: deposit.currency || "GHS",
       reference: deposit.reference,
       description: `Deposit via ${deposit.provider}`,
       status: "completed",
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    });
+    };
+    db.transactions.unshift(newTx);
+    if (isMongoConnected()) {
+      try {
+        await UserModel.updateOne(
+          { id: user.id },
+          { $set: { balance: user.balance, totalDeposits: user.totalDeposits, updatedAt: user.updatedAt } }
+        );
+        await TransactionModel.create(newTx);
+      } catch (err) {
+        console.warn("[MongoDB] Deposit confirm user update error:", err.message);
+      }
+    }
     creditReferralBonus(user, deposit);
   }
+  await saveDepositToMongo(deposit);
   await db.saveData();
   sendDepositNotification({
     username: user?.username || user?.email || "CloudMineX User",
@@ -2955,8 +3362,30 @@ var handleDeposit = async (req, res) => {
       status: "completed",
       createdAt: deposit.createdAt
     });
+    if (isMongoConnected()) {
+      try {
+        await UserModel.updateOne(
+          { id: user.id },
+          { $set: { balance: user.balance, totalDeposits: user.totalDeposits, updatedAt: user.updatedAt } }
+        );
+        await TransactionModel.create({
+          id: `tx_dep_${Date.now()}`,
+          userId: user.id,
+          type: "deposit",
+          amount: numAmount,
+          currency: deposit.currency,
+          reference,
+          description: `Deposit via ${provider}`,
+          status: "completed",
+          createdAt: deposit.createdAt
+        });
+      } catch (err) {
+        console.warn("[MongoDB] Handle deposit user sync error:", err.message);
+      }
+    }
   }
   db.deposits.unshift(deposit);
+  await saveDepositToMongo(deposit);
   await db.saveData();
   sendDepositNotification({
     username: user.username || user.email,
@@ -3046,8 +3475,10 @@ var handleWithdrawal = async (req, res) => {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
   db.withdrawals.unshift(withdrawal);
+  const txId = `tx_wd_${Date.now()}`;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   db.transactions.unshift({
-    id: `tx_wd_${Date.now()}`,
+    id: txId,
     userId: user.id,
     type: "withdrawal",
     amount: numAmount,
@@ -3055,8 +3486,45 @@ var handleWithdrawal = async (req, res) => {
     reference: ref,
     description: `Withdrawal request to ${destination || provider}`,
     status: "pending",
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    destination: destination || provider,
+    createdAt: nowIso
   });
+  try {
+    const { isMongoConnected: isMongoConnected2, UserModel: UserModel2, WithdrawalModel: WithdrawalModel2, TransactionModel: TransactionModel2 } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
+    if (isMongoConnected2()) {
+      await Promise.all([
+        UserModel2.updateOne(
+          { id: user.id },
+          { $set: { balance: user.balance, updatedAt: user.updatedAt } }
+        ),
+        WithdrawalModel2.updateOne(
+          { id: withdrawal.id },
+          { $set: withdrawal },
+          { upsert: true }
+        ),
+        TransactionModel2.updateOne(
+          { reference: ref },
+          {
+            $set: {
+              id: txId,
+              userId: user.id,
+              type: "withdrawal",
+              amount: numAmount,
+              currency: "GHS",
+              reference: ref,
+              description: `Withdrawal request to ${destination || provider}`,
+              status: "pending",
+              destination: destination || provider,
+              createdAt: nowIso
+            }
+          },
+          { upsert: true }
+        )
+      ]);
+    }
+  } catch (mErr) {
+    console.warn("[Withdrawal] Immediate Mongo update notice:", mErr);
+  }
   await db.saveData();
   sendWithdrawalNotification({
     username: user.username || user.email || usernameParam || "CloudMineX User",
@@ -3082,41 +3550,148 @@ apiRouter.post("/withdrawals/demo", handleWithdrawal);
 apiRouter.post("/withdrawals/create", handleWithdrawal);
 apiRouter.post("/withdraw", handleWithdrawal);
 apiRouter.post("/withdrawals", handleWithdrawal);
-apiRouter.get("/withdrawals/:userId", (req, res) => {
-  const userWds = db.withdrawals.filter((w) => w.userId === req.params.userId);
+apiRouter.get("/withdrawals/:userId", async (req, res) => {
+  const userId = req.params.userId;
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const userDoc = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
+      ]
+    }).lean();
+    const actualUserId = userDoc ? userDoc.id : userId;
+    const withdrawals = await WithdrawalModel.find({
+      $or: [
+        { userId: actualUserId },
+        ...userDoc?.username ? [{ userId: userDoc.username }] : []
+      ]
+    }).sort({ createdAt: -1 }).lean();
+    return res.json({ success: true, withdrawals });
+  }
+  const userWds = db.withdrawals.filter((w) => w.userId === userId);
   res.json({ success: true, withdrawals: userWds });
 });
 apiRouter.get("/income/:userId", async (req, res) => {
   const userId = req.params.userId;
+  await ensureMongoConnected();
   if (isMongoConnected()) {
-    try {
-      await db.syncFromMongo();
-    } catch (e) {
+    const user2 = await UserModel.findOne({
+      $or: [
+        { id: userId },
+        { username: userId },
+        { username: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }
+      ]
+    }).lean();
+    if (!user2) return res.status(404).json({ success: false, message: "User not found" });
+    const actualUserId = user2.id;
+    const username = user2.username;
+    const userFilter = [
+      { userId: actualUserId },
+      ...username ? [{ userId: username }] : []
+    ];
+    const activeContracts2 = await MiningContractModel.find({
+      $or: userFilter,
+      status: "active"
+    }).lean();
+    const completedContracts2 = await MiningContractModel.find({
+      $or: userFilter,
+      status: "completed"
+    }).lean();
+    const userWithdrawals = await WithdrawalModel.find({
+      $or: userFilter
+    }).lean();
+    const rawTxs2 = await TransactionModel.find({
+      $or: userFilter
+    }).sort({ createdAt: -1 }).lean();
+    const orphanTxIds = [];
+    const activeTxs = [];
+    for (const tx of rawTxs2) {
+      if (tx.type === "withdrawal") {
+        const matchedWd = userWithdrawals.find(
+          (w) => tx.reference && w.reference === tx.reference || tx.id && tx.id.includes(w.id.replace("wd_", "")) || w.reference && tx.reference && tx.reference.includes(w.reference)
+        );
+        if (!matchedWd) {
+          if (tx.id) orphanTxIds.push(tx.id);
+          continue;
+        }
+        const isDone = matchedWd.status === "approved" || matchedWd.status === "completed";
+        const dest = matchedWd.destination || tx.destination || "Mobile Wallet";
+        activeTxs.push({
+          ...tx,
+          destination: dest,
+          description: `${isDone ? "Withdrawal" : "Withdrawal request"} to ${dest}`,
+          status: isDone ? "completed" : matchedWd.status === "rejected" ? "failed" : tx.status
+        });
+      } else {
+        activeTxs.push(tx);
+      }
     }
+    if (orphanTxIds.length > 0) {
+      TransactionModel.deleteMany({ id: { $in: orphanTxIds } }).exec().catch(() => {
+      });
+    }
+    const todayEstReward2 = activeContracts2.reduce((sum, c) => sum + (c.estimatedDailyReward || 0), 0);
+    return res.json({
+      success: true,
+      balance: user2.balance !== void 0 ? user2.balance : 0,
+      todayEstReward: todayEstReward2,
+      totalRewards: user2.totalRewards !== void 0 ? user2.totalRewards : 0,
+      totalSimulatedRewards: user2.totalRewards !== void 0 ? user2.totalRewards : 0,
+      activeContractsCount: activeContracts2.length,
+      completedContractsCount: completedContracts2.length,
+      activeContracts: activeContracts2,
+      completedContracts: completedContracts2,
+      transactions: activeTxs
+    });
   }
-  processMiningYields(userId);
   const user = db.users.find((u) => u.id === userId);
   if (!user) return res.status(404).json({ success: false, message: "User not found" });
   db.reconcileWithdrawalTransactions();
   const activeContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === "active");
   const completedContracts = db.miningContracts.filter((c) => c.userId === userId && c.status === "completed");
-  const userTxs = db.transactions.filter((t) => t.userId === userId).map((t) => {
+  const rawTxs = db.transactions.filter((t) => t.userId === userId).filter((t) => {
     if (t.type === "withdrawal") {
       const matchedWd = db.withdrawals.find(
         (w) => t.reference && w.reference === t.reference || t.id && t.id.includes(w.id.replace("wd_", ""))
       );
-      if (matchedWd && matchedWd.destination) {
+      return Boolean(matchedWd);
+    }
+    return true;
+  }).map((t) => {
+    if (t.type === "withdrawal") {
+      const matchedWd = db.withdrawals.find(
+        (w) => t.reference && w.reference === t.reference || t.id && t.id.includes(w.id.replace("wd_", ""))
+      );
+      if (matchedWd) {
         const isDone = matchedWd.status === "approved" || matchedWd.status === "completed";
+        const dest = matchedWd.destination || t.destination || "Mobile Wallet";
         return {
           ...t,
-          destination: matchedWd.destination,
-          description: `${isDone ? "Withdrawal" : "Withdrawal request"} to ${matchedWd.destination}`,
+          destination: dest,
+          description: `${isDone ? "Withdrawal" : "Withdrawal request"} to ${dest}`,
           status: isDone ? "completed" : matchedWd.status === "rejected" ? "failed" : t.status
         };
       }
     }
     return t;
-  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  });
+  rawTxs.sort((a, b) => {
+    if (a.status === "completed" && b.status !== "completed") return -1;
+    if (b.status === "completed" && a.status !== "completed") return 1;
+    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+  });
+  const seenTxRefs = /* @__PURE__ */ new Set();
+  const userTxs = [];
+  for (const t of rawTxs) {
+    if (t.reference) {
+      if (seenTxRefs.has(t.reference)) continue;
+      seenTxRefs.add(t.reference);
+    }
+    userTxs.push(t);
+  }
+  userTxs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const todayEstReward = activeContracts.reduce((sum, c) => sum + c.estimatedDailyReward, 0);
   res.json({
     success: true,
@@ -3339,12 +3914,37 @@ apiRouter.get("/settings", (req, res) => {
   res.json({ success: true, settings: db.settings });
 });
 apiRouter.get("/admin/stats", async (req, res) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {
-    console.warn("[Admin Stats] syncFromMongo notice:", err);
+  await ensureMongoConnected();
+  if (isMongoConnected()) {
+    const [users, plans, deposits, withdrawals, contracts, settingsDoc] = await Promise.all([
+      UserModel.find().lean(),
+      MiningPlanModel.find().lean(),
+      getUnifiedMongoDeposits(),
+      getUnifiedMongoWithdrawals(),
+      MiningContractModel.find({ status: "active" }).lean(),
+      AppSettingsModel.findOne().lean()
+    ]);
+    const totalUsers2 = users.length;
+    const activeContracts2 = contracts.length;
+    const totalDeposits2 = deposits.reduce((sum, d) => d.status === "confirmed" ? sum + (d.amount || 0) : sum, 0);
+    const totalWithdrawals2 = withdrawals.reduce((sum, w) => sum + (w.amount || 0), 0);
+    const totalRewardsIssued2 = users.reduce((sum, u) => sum + (u.totalRewards || 0), 0);
+    return res.json({
+      success: true,
+      stats: {
+        totalUsers: totalUsers2,
+        activeContracts: activeContracts2,
+        totalDeposits: totalDeposits2,
+        totalWithdrawals: totalWithdrawals2,
+        totalRewardsIssued: totalRewardsIssued2
+      },
+      plans: plans && plans.length > 0 ? plans : db.miningPlans,
+      users,
+      deposits,
+      withdrawals,
+      settings: settingsDoc ? { ...db.settings, ...settingsDoc } : db.settings
+    });
   }
-  db.cleanupSpecificRecords();
   const totalUsers = db.users.length;
   const activeContracts = db.miningContracts.filter((c) => c.status === "active").length;
   const totalDeposits = db.deposits.reduce((sum, d) => d.status === "confirmed" ? sum + d.amount : sum, 0);
@@ -3483,12 +4083,21 @@ apiRouter.post("/admin/deposits/reference/approve", async (req, res) => {
   if (!reference) {
     return res.status(400).json({ success: false, message: "Reference is required." });
   }
-  try {
-    await db.syncFromMongo();
-  } catch (err) {
-  }
+  await ensureMongoConnected();
   const trimmedRef = reference.trim();
   let deposit = db.deposits.find((d) => d.reference && d.reference.toLowerCase() === trimmedRef.toLowerCase());
+  if (!deposit && isMongoConnected()) {
+    try {
+      const dDoc = await DepositModel.findOne({
+        $or: [{ reference: trimmedRef }, { reference: new RegExp(`^${trimmedRef.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }]
+      }).lean();
+      if (dDoc) {
+        deposit = { ...dDoc };
+        db.deposits.unshift(deposit);
+      }
+    } catch (e) {
+    }
+  }
   if (deposit) {
     if (deposit.status === "confirmed") {
       return res.status(400).json({ success: false, message: `Deposit reference ${trimmedRef} is already confirmed.` });
@@ -3496,12 +4105,19 @@ apiRouter.post("/admin/deposits/reference/approve", async (req, res) => {
     deposit.status = "confirmed";
     deposit.confirmations = deposit.requiredConfirmations || 3;
     deposit.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    const targetUser2 = db.users.find((u) => u.id === deposit.userId);
+    let targetUser2 = db.users.find((u) => u.id === deposit.userId);
+    if (!targetUser2 && isMongoConnected()) {
+      try {
+        const uDoc = await UserModel.findOne({ id: deposit.userId }).lean();
+        if (uDoc) targetUser2 = uDoc;
+      } catch (e) {
+      }
+    }
     if (targetUser2) {
       targetUser2.balance = Number((targetUser2.balance + deposit.amount).toFixed(2));
       targetUser2.totalDeposits = Number(((targetUser2.totalDeposits || 0) + deposit.amount).toFixed(2));
       targetUser2.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      db.transactions.unshift({
+      const newTx2 = {
         id: `tx_dep_${Date.now()}`,
         userId: targetUser2.id,
         type: "deposit",
@@ -3511,9 +4127,22 @@ apiRouter.post("/admin/deposits/reference/approve", async (req, res) => {
         description: `Admin Verified Deposit: ${deposit.reference}`,
         status: "completed",
         createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      db.transactions.unshift(newTx2);
+      if (isMongoConnected()) {
+        try {
+          await UserModel.updateOne(
+            { id: targetUser2.id },
+            { $set: { balance: targetUser2.balance, totalDeposits: targetUser2.totalDeposits, updatedAt: targetUser2.updatedAt } }
+          );
+          await TransactionModel.create(newTx2);
+        } catch (err) {
+          console.warn("[MongoDB] Admin approve reference sync error:", err.message);
+        }
+      }
       creditReferralBonus(targetUser2, deposit);
     }
+    await saveDepositToMongo(deposit);
     await db.saveData();
     return res.json({
       success: true,
@@ -3528,6 +4157,18 @@ apiRouter.post("/admin/deposits/reference/approve", async (req, res) => {
   }
   if (!targetUser && username) {
     targetUser = db.users.find((u) => u.username?.toLowerCase() === username.trim().toLowerCase());
+  }
+  if (!targetUser && isMongoConnected()) {
+    try {
+      const uDoc = await UserModel.findOne({
+        $or: [
+          ...userId ? [{ id: userId }, { username: userId }] : [],
+          ...username ? [{ username }, { username: new RegExp(`^${username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }] : []
+        ]
+      }).lean();
+      if (uDoc) targetUser = uDoc;
+    } catch (e) {
+    }
   }
   if (!targetUser && db.users.length > 0) {
     targetUser = db.users[0];
@@ -3557,7 +4198,7 @@ apiRouter.post("/admin/deposits/reference/approve", async (req, res) => {
   targetUser.balance = Number((targetUser.balance + depositAmount).toFixed(2));
   targetUser.totalDeposits = Number(((targetUser.totalDeposits || 0) + depositAmount).toFixed(2));
   targetUser.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  db.transactions.unshift({
+  const newTx = {
     id: `tx_dep_${Date.now()}`,
     userId: targetUser.id,
     type: "deposit",
@@ -3567,8 +4208,21 @@ apiRouter.post("/admin/deposits/reference/approve", async (req, res) => {
     description: note || `Admin Verified Deposit: ${trimmedRef}`,
     status: "completed",
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  });
+  };
+  db.transactions.unshift(newTx);
+  if (isMongoConnected()) {
+    try {
+      await UserModel.updateOne(
+        { id: targetUser.id },
+        { $set: { balance: targetUser.balance, totalDeposits: targetUser.totalDeposits, updatedAt: targetUser.updatedAt } }
+      );
+      await TransactionModel.create(newTx);
+    } catch (err) {
+      console.warn("[MongoDB] Admin create & credit reference sync error:", err.message);
+    }
+  }
   creditReferralBonus(targetUser, newDeposit);
+  await saveDepositToMongo(newDeposit);
   await db.saveData();
   sendDepositNotification({
     username: targetUser.username || targetUser.email,
@@ -3592,11 +4246,21 @@ apiRouter.post("/admin/deposits/reference/approve", async (req, res) => {
   });
 });
 apiRouter.post("/admin/deposits/:id/approve", async (req, res) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {
+  await ensureMongoConnected();
+  const targetId = req.params.id;
+  let deposit = db.deposits.find((d) => d.id === targetId || d.reference === targetId);
+  if (!deposit && isMongoConnected()) {
+    try {
+      const dDoc = await DepositModel.findOne({
+        $or: [{ id: targetId }, { reference: targetId }]
+      }).lean();
+      if (dDoc) {
+        deposit = { ...dDoc };
+        db.deposits.unshift(deposit);
+      }
+    } catch (e) {
+    }
   }
-  const deposit = db.deposits.find((d) => d.id === req.params.id);
   if (!deposit) return res.status(404).json({ success: false, message: "Deposit not found" });
   if (deposit.status === "confirmed") {
     return res.status(400).json({ success: false, message: "Deposit already confirmed" });
@@ -3604,12 +4268,22 @@ apiRouter.post("/admin/deposits/:id/approve", async (req, res) => {
   deposit.status = "confirmed";
   deposit.confirmations = deposit.requiredConfirmations || 3;
   deposit.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  const user = db.users.find((u) => u.id === deposit.userId);
+  let user = db.users.find((u) => u.id === deposit.userId);
+  if (!user && isMongoConnected()) {
+    try {
+      const uDoc = await UserModel.findOne({ id: deposit.userId }).lean();
+      if (uDoc) {
+        user = { ...uDoc };
+        db.users.push(user);
+      }
+    } catch (e) {
+    }
+  }
   if (user) {
     user.balance = Number((user.balance + deposit.amount).toFixed(2));
     user.totalDeposits = Number(((user.totalDeposits || 0) + deposit.amount).toFixed(2));
     user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    db.transactions.unshift({
+    const newTx = {
       id: `tx_dep_${Date.now()}`,
       userId: user.id,
       type: "deposit",
@@ -3619,9 +4293,22 @@ apiRouter.post("/admin/deposits/:id/approve", async (req, res) => {
       description: `Confirmed Deposit via ${deposit.provider}`,
       status: "completed",
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    });
+    };
+    db.transactions.unshift(newTx);
+    if (isMongoConnected()) {
+      try {
+        await UserModel.updateOne(
+          { id: user.id },
+          { $set: { balance: user.balance, totalDeposits: user.totalDeposits, updatedAt: user.updatedAt } }
+        );
+        await TransactionModel.create(newTx);
+      } catch (err) {
+        console.warn("[MongoDB] Admin approve deposit sync error:", err.message);
+      }
+    }
     creditReferralBonus(user, deposit);
   }
+  await saveDepositToMongo(deposit);
   await db.saveData();
   if (user) {
     sendDepositNotification({
@@ -3642,27 +4329,39 @@ apiRouter.post("/admin/deposits/:id/approve", async (req, res) => {
   res.json({ success: true, message: "Deposit approved and user credited successfully", deposit, user });
 });
 apiRouter.post("/admin/deposits/:id/reject", async (req, res) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {
+  await ensureMongoConnected();
+  const targetId = req.params.id;
+  let deposit = db.deposits.find((d) => d.id === targetId || d.reference === targetId);
+  if (!deposit && isMongoConnected()) {
+    try {
+      const dDoc = await DepositModel.findOne({
+        $or: [{ id: targetId }, { reference: targetId }]
+      }).lean();
+      if (dDoc) {
+        deposit = { ...dDoc };
+        db.deposits.unshift(deposit);
+      }
+    } catch (e) {
+    }
   }
-  const deposit = db.deposits.find((d) => d.id === req.params.id);
   if (!deposit) return res.status(404).json({ success: false, message: "Deposit not found" });
   deposit.status = "rejected";
   deposit.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await saveDepositToMongo(deposit);
   await db.saveData();
   res.json({ success: true, message: "Deposit rejected successfully", deposit });
 });
 apiRouter.post("/admin/deposits/:id/delete", async (req, res) => {
-  try {
-    await db.syncFromMongo();
-  } catch (err) {
+  await ensureMongoConnected();
+  const targetId = req.params.id;
+  const index = db.deposits.findIndex((d) => d.id === targetId || d.reference === targetId);
+  let removed = null;
+  if (index !== -1) {
+    removed = db.deposits.splice(index, 1)[0];
   }
-  const index = db.deposits.findIndex((d) => d.id === req.params.id);
-  if (index === -1) return res.status(404).json({ success: false, message: "Deposit not found" });
-  const removed = db.deposits.splice(index, 1)[0];
+  await deleteDepositFromMongo(targetId);
   await db.saveData();
-  res.json({ success: true, message: `Deposit ${removed.reference || removed.id} deleted successfully.`, deposit: removed });
+  res.json({ success: true, message: `Deposit ${removed?.reference || targetId} deleted successfully.`, deposit: removed });
 });
 apiRouter.post("/admin/users/:id/credit", (req, res) => {
   const user = db.users.find((u) => u.id === req.params.id);
@@ -3713,43 +4412,148 @@ apiRouter.post("/admin/users/:id/credit", (req, res) => {
   db.saveData();
   res.json({ success: true, message: `User ${user.username} updated/credited successfully`, user });
 });
-apiRouter.post("/admin/withdrawals/:id/approve", (req, res) => {
-  const withdrawal = db.withdrawals.find((w) => w.id === req.params.id);
+apiRouter.post("/admin/withdrawals/:id/approve", async (req, res) => {
+  const { id } = req.params;
+  const withdrawal = db.withdrawals.find((w) => w.id === id || w.reference === id);
   if (!withdrawal) return res.status(404).json({ success: false, message: "Withdrawal not found" });
+  const wasRejected = withdrawal.status === "rejected";
+  const user = db.users.find((u) => u.id === withdrawal.userId);
+  if (wasRejected && user) {
+    user.balance = Number(Math.max(0, user.balance - withdrawal.amount).toFixed(2));
+    user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  }
   withdrawal.status = "approved";
   withdrawal.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  const tx = db.transactions.find((t) => t.reference === withdrawal.reference);
-  if (tx) tx.status = "completed";
-  db.saveData();
-  res.json({ success: true, message: "Withdrawal approved successfully", withdrawal });
-});
-apiRouter.post("/admin/withdrawals/:id/reject", (req, res) => {
-  const withdrawal = db.withdrawals.find((w) => w.id === req.params.id);
-  if (!withdrawal) return res.status(404).json({ success: false, message: "Withdrawal not found" });
-  const shouldRefund = req.body?.refund !== false && req.query?.noRefund !== "true" && withdrawal.status !== "rejected";
-  if (withdrawal.status !== "approved" && withdrawal.status !== "rejected") {
-    if (shouldRefund) {
-      const user = db.users.find((u) => u.id === withdrawal.userId);
-      if (user) {
-        user.balance = Number((user.balance + withdrawal.amount).toFixed(2));
-        user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      }
+  const matchingTxs = db.transactions.filter(
+    (t) => t.reference && t.reference === withdrawal.reference || t.type === "withdrawal" && t.id.includes(withdrawal.id.replace("wd_", ""))
+  );
+  let primaryTx;
+  if (matchingTxs.length > 0) {
+    primaryTx = matchingTxs[0];
+    primaryTx.status = "completed";
+    const dest = withdrawal.destination || primaryTx.destination || "Mobile Wallet";
+    primaryTx.description = `Withdrawal to ${dest}`;
+    primaryTx.destination = dest;
+    if (matchingTxs.length > 1) {
+      const removeIds = new Set(matchingTxs.slice(1).map((t) => t.id));
+      db.transactions = db.transactions.filter((t) => !removeIds.has(t.id));
     }
+  }
+  await db.saveData();
+  try {
+    const {
+      isMongoConnected: isMongoConnected2,
+      WithdrawalModel: WithdrawalModel2,
+      TransactionModel: TransactionModel2,
+      UserModel: UserModel2,
+      deduplicateWithdrawalTransactionsInMongo: deduplicateWithdrawalTransactionsInMongo2
+    } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
+    if (isMongoConnected2()) {
+      const mongoOps = [
+        WithdrawalModel2.updateOne(
+          { $or: [{ id: withdrawal.id }, { reference: withdrawal.reference }] },
+          { $set: { status: "approved", destination: withdrawal.destination, updatedAt: withdrawal.updatedAt } }
+        )
+      ];
+      if (primaryTx && withdrawal.reference) {
+        mongoOps.push(deduplicateWithdrawalTransactionsInMongo2(withdrawal.reference, primaryTx));
+      } else if (primaryTx) {
+        mongoOps.push(
+          TransactionModel2.updateMany(
+            { $or: [{ id: primaryTx.id }, { reference: withdrawal.reference }] },
+            { $set: { status: "completed", description: primaryTx.description, destination: primaryTx.destination } }
+          )
+        );
+      }
+      if (wasRejected && user) {
+        mongoOps.push(
+          UserModel2.updateOne(
+            { id: user.id },
+            { $set: { balance: user.balance, updatedAt: user.updatedAt } }
+          )
+        );
+      }
+      await Promise.all(mongoOps);
+    }
+  } catch (mErr) {
+    console.warn("[Admin Approve] Mongo sync notice:", mErr);
+  }
+  res.json({ success: true, message: "Withdrawal approved successfully", withdrawal, user });
+});
+apiRouter.post("/admin/withdrawals/:id/reject", async (req, res) => {
+  const { id } = req.params;
+  const withdrawal = db.withdrawals.find((w) => w.id === id || w.reference === id);
+  if (!withdrawal) return res.status(404).json({ success: false, message: "Withdrawal not found" });
+  const wasAlreadyRejected = withdrawal.status === "rejected";
+  const shouldRefund = req.body?.refund !== false && req.query?.noRefund !== "true" && !wasAlreadyRejected;
+  const user = db.users.find((u) => u.id === withdrawal.userId);
+  if (shouldRefund && user) {
+    user.balance = Number((user.balance + withdrawal.amount).toFixed(2));
+    user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   }
   withdrawal.status = "rejected";
   withdrawal.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  const tx = db.transactions.find((t) => t.reference === withdrawal.reference);
-  if (tx) {
-    tx.status = "failed";
+  const matchingTxs = db.transactions.filter(
+    (t) => t.reference && t.reference === withdrawal.reference || t.type === "withdrawal" && t.id.includes(withdrawal.id.replace("wd_", ""))
+  );
+  let primaryTx;
+  if (matchingTxs.length > 0) {
+    primaryTx = matchingTxs[0];
+    primaryTx.status = "failed";
     if (!shouldRefund) {
-      tx.description = `Withdrawal rejected without refund (duplicate/phantom prevention)`;
+      primaryTx.description = `Withdrawal rejected without refund (duplicate/phantom prevention)`;
+    } else {
+      primaryTx.description = `Withdrawal rejected to ${withdrawal.destination || primaryTx.destination || "Mobile Wallet"}`;
+    }
+    if (matchingTxs.length > 1) {
+      const removeIds = new Set(matchingTxs.slice(1).map((t) => t.id));
+      db.transactions = db.transactions.filter((t) => !removeIds.has(t.id));
     }
   }
-  db.saveData();
+  await db.saveData();
+  try {
+    const {
+      isMongoConnected: isMongoConnected2,
+      WithdrawalModel: WithdrawalModel2,
+      TransactionModel: TransactionModel2,
+      UserModel: UserModel2,
+      deduplicateWithdrawalTransactionsInMongo: deduplicateWithdrawalTransactionsInMongo2
+    } = await Promise.resolve().then(() => (init_dbMongo(), dbMongo_exports));
+    if (isMongoConnected2()) {
+      const mongoOps = [
+        WithdrawalModel2.updateOne(
+          { $or: [{ id: withdrawal.id }, { reference: withdrawal.reference }] },
+          { $set: { status: "rejected", updatedAt: withdrawal.updatedAt } }
+        )
+      ];
+      if (primaryTx && withdrawal.reference) {
+        mongoOps.push(deduplicateWithdrawalTransactionsInMongo2(withdrawal.reference, primaryTx));
+      } else if (primaryTx) {
+        mongoOps.push(
+          TransactionModel2.updateMany(
+            { $or: [{ id: primaryTx.id }, { reference: withdrawal.reference }] },
+            { $set: { status: "failed", description: primaryTx.description } }
+          )
+        );
+      }
+      if (shouldRefund && user) {
+        mongoOps.push(
+          UserModel2.updateOne(
+            { id: user.id },
+            { $set: { balance: user.balance, updatedAt: user.updatedAt } }
+          )
+        );
+      }
+      await Promise.all(mongoOps);
+    }
+  } catch (mErr) {
+    console.warn("[Admin Reject] Mongo sync notice:", mErr);
+  }
   res.json({
     success: true,
     message: shouldRefund ? "Withdrawal rejected and balance refunded" : "Withdrawal rejected without refund (duplicate prevention)",
-    withdrawal
+    withdrawal,
+    user
   });
 });
 apiRouter.post("/admin/withdrawals/reference/update-destination", async (req, res) => {
